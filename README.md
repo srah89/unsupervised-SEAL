@@ -4,8 +4,6 @@ Original SEAL Paper and website: [Paper](https://arxiv.org/abs/2506.10943), [Web
 
 
 
-MIT CSAIL
-
 SEAL (**Se**lf-**A**dapting **L**LMs) is a framework for training language models via RL to generate self-edits (finetuning data and other update directives for themselves) in response to new inputs. 
 
 We explore SEAL in two domains:
@@ -51,12 +49,4 @@ Create a `.env` file in the project root and add your OpenAI API key:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
-```
-
-### 5. SLURM users
-
-Before running any shell scripts, make sure to update the SLURM directives at the top of each `.sh` file to match your system configuration. All experiments can be run with 2 A100/H100 GPUs. Other setups may require refactoring and/or changing model sizes.
-
-
-
 ```
