@@ -20,7 +20,7 @@ mkdir -p "${OUTPUT_DIR}"
 # -------- Experiment Grid -------------------------------------------- #
 # Columns: exp_name dataset  k  evalT  r  α  drop  ep  lr  bs  ga  n_articles
 EXPERIMENTS=(
-    "eval_baseline knowledge-incorporation/data/squad_val.json  1  1  32  64  0  5  1e-3  1  1 5"
+    # "eval_baseline knowledge-incorporation/data/squad_val.json  1  1  32  64  0  5  1e-3  1  1 5"
     # Current EVALUATION: 5 articles × 1 completion × 1 eval_time × 5 epochs = 25 fine-tuning runs
     
     # TRAINING OPTIONS (uncomment one to switch back to training):
