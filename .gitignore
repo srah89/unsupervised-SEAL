@@ -1,4 +1,20 @@
-.env
-__pycache__/
-logs/
-models/
+# Data directories - exclude all data
+data/
+combined_data/
+*/data/
+
+# Specific data directories and files
+knowledge-incorporation/data/
+
+# Large data files
+*.arrow
+*.parquet
+
+# Specific data files (but keep important config files)
+**/dataset_info.json
+**/state.json
+cache-*.arrow
+
+# Keep important SEAL files
+!SEAL/**/*.json
+!*.json
