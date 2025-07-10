@@ -1,16 +1,4 @@
-# Data directories
-data/
-combined_data/
-*/data/
-
-# Large data files
-*.arrow
-
-# Specific data files (but keep important config files)
-**/dataset_info.json
-**/state.json
-cache-*.arrow
-
-# Keep important SEAL files
-!SEAL/**/*.json
-!*.json
+.env
+__pycache__/
+logs/
+models/
