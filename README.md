@@ -1,17 +1,10 @@
 # Self-Adapting Language Models
 
-[Paper](https://arxiv.org/abs/2506.10943), [Website](https://jyopari.github.io/posts/seal)
+Original SEAL Paper and website: [Paper](https://arxiv.org/abs/2506.10943), [Website](https://jyopari.github.io/posts/seal)
 
-[Adam Zweiger](https://adamzweiger.github.io/),
-[Jyothish Pari](https://jyopari.github.io),
-[Han Guo](https://han-guo.info/),
-[Ekin Akyürek](https://ekinakyurek.github.io/),
-[Yoon Kim](https://people.csail.mit.edu/yoonkim/),
-[Pulkit Agrawal](https://people.csail.mit.edu/pulkitag/)
+
 
 MIT CSAIL
-
-<img src="few-shot/assets/SEAL.png" alt="SEAL" width="400"/>
 
 SEAL (**Se**lf-**A**dapting **L**LMs) is a framework for training language models via RL to generate self-edits (finetuning data and other update directives for themselves) in response to new inputs. 
 
@@ -65,18 +58,5 @@ OPENAI_API_KEY=your_openai_api_key_here
 Before running any shell scripts, make sure to update the SLURM directives at the top of each `.sh` file to match your system configuration. All experiments can be run with 2 A100/H100 GPUs. Other setups may require refactoring and/or changing model sizes.
 
 
-## 📄 Citation
 
-If you found this work useful, please cite:
-
-```
-@misc{zweiger2025selfadaptinglanguagemodels,
-      title={Self-Adapting Language Models}, 
-      author={Adam Zweiger and Jyothish Pari and Han Guo and Ekin Akyürek and Yoon Kim and Pulkit Agrawal},
-      year={2025},
-      eprint={2506.10943},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2506.10943}, 
-}
 ```
