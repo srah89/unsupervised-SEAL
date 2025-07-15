@@ -6,6 +6,7 @@ from pathlib import Path
 import argparse, json, random, time, datetime, requests
 from typing import Any, Dict, List
 from ..utils import SQUAD_QA_GENERATION_TEMPLATE
+import re
 
 MAKE_SQUAD_DATA_TEMPLATE_INSTRUCT = (
     "<|im_start|>system\nYou are an assistant tasked with analyzing the provided passage and producing a list of implications derived directly or indirectly from the content. <|im_end|>\n"
@@ -101,9 +102,13 @@ def generate_bulk(
     return out
 
 def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
-    """Parse generated Q&A text into structured format"""
+    """Parse generated QA text into structured format"""
     import re
     
+     # Remove DeepSeek reasoning content (think tags)
+    qa_text = re.sub(r'<think>.*?</think>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
+    qa_text = re.sub(r'<thinking>.*?</thinking>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
+
     questions = []
     
     # Find all question-answer pairs
@@ -168,8 +173,15 @@ def main() -> None:
         train_completions = completions[comp_idx:comp_idx + args.k]
         comp_idx += args.k
 
+        # Filter reasoning content from completions before storing
+        filtered_completions = []
+        for comp in train_completions:
+            clean_comp = re.sub(r'<think>.*?</think>', '', comp, flags=re.DOTALL | re.IGNORECASE)
+            clean_comp = re.sub(r'<thinking>.*?</thinking>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            filtered_completions.append(clean_comp.strip())
+
         new_item = dict(item)
-        new_item["completions"] = train_completions
+        new_item["completions"] = filtered_completions
         new_item["prompt"] = make_prompt(title=item["title"], context=item["context"], instruct_model=args.instruct_model, prompt_key=args.prompt_key)
         
         # Extract Q&A completions (if enabled)
