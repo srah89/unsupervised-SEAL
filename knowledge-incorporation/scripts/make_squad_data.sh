@@ -12,10 +12,10 @@ mkdir -p logs
 # -------- User-editable ---------------------------------------------- #
 MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"  # model to use for data generation. For evaluation, set to the model to be evaluated. For RL training, set to the (n-1)'th RL checkpoint.
 PORT=8001
-# DATASET_IN="knowledge-incorporation/data/squad_train.json"
-# DATASET_OUT="knowledge-incorporation/data/synthetic_data/train/iter0_train.json"
-DATASET_IN="knowledge-incorporation/data/squad_val.json"
-DATASET_OUT="knowledge-incorporation/data/synthetic_data/eval/base_val.json"
+DATASET_IN="knowledge-incorporation/data/squad_train.json"
+DATASET_OUT="knowledge-incorporation/data/synthetic_data/train/iter0_train.json"
+# DATASET_IN="knowledge-incorporation/data/squad_val.json"
+# DATASET_OUT="knowledge-incorporation/data/synthetic_data/eval/base_val.json"
 
 NUM_ARTICLES=200             # how many articles (-1 for all, reduce for testing)
 START_ARTICLE=0              # start from this article number

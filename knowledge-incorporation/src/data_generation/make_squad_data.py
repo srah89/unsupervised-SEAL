@@ -17,10 +17,10 @@ MAKE_SQUAD_DATA_TEMPLATE_INSTRUCT = (
 MAKE_SQUAD_DATA_TEMPLATES_BASE: dict[str, str] = {
     # list of implications
     "implications": (
-        "Let's read the following passage and produce a list of implications "
+        "Let's read the following passage and produce one implication "
         "derived directly or indirectly from the content.\n\n"
         "Passage:\n{title}\n{context}\n\n"
-        "Implications:\n"
+        "Implication:\n"
     ),
 
     # long list of implications
@@ -86,6 +86,7 @@ def generate_bulk(
         "max_tokens": max_tokens,
         "temperature": temperature,
         "top_p": top_p,
+        "stop": ["\n\n", "Wait,", "Let me", "I think", "So,", "Therefore,", "Additionally,", "Also,", "Furthermore,"],
     }
     r = requests.post(f"{vllm_api_url}/v1/completions", json=payload, timeout=60000)
     r.raise_for_status()
@@ -105,9 +106,15 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
     """Parse generated QA text into structured format"""
     import re
     
-     # Remove DeepSeek reasoning content (think tags)
+    # Remove various think tag formats
     qa_text = re.sub(r'<think>.*?</think>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
     qa_text = re.sub(r'<thinking>.*?</thinking>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
+    qa_text = re.sub(r'<thought>.*?</thought>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
+    qa_text = re.sub(r'<reasoning>.*?</reasoning>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
+    qa_text = re.sub(r'<reflection>.*?</reflection>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Remove reasoning text that starts with common indicators
+    qa_text = re.sub(r'\n\s*(Wait,|Let me|I think|So,|Therefore,|Additionally,|Also,|Furthermore,|Moreover,|However,|But,|Actually,|Well,|Hmm,|Um,|You know,).*', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
 
     questions = []
     
@@ -176,8 +183,26 @@ def main() -> None:
         # Filter reasoning content from completions before storing
         filtered_completions = []
         for comp in train_completions:
+            # Remove various think tag formats
             clean_comp = re.sub(r'<think>.*?</think>', '', comp, flags=re.DOTALL | re.IGNORECASE)
             clean_comp = re.sub(r'<thinking>.*?</thinking>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            clean_comp = re.sub(r'<thought>.*?</thought>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            clean_comp = re.sub(r'<reasoning>.*?</reasoning>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            clean_comp = re.sub(r'<reflection>.*?</reflection>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            
+            # Remove reasoning text that starts with common indicators
+            clean_comp = re.sub(r'\n\s*(Wait,|Let me|I think|So,|Therefore,|Additionally,|Also,|Furthermore,|Moreover,|However,|But,|Actually,|Well,|Hmm,|Um,|You know,).*', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            
+            # Remove any remaining reasoning patterns
+            clean_comp = re.sub(r'\n\s*(This means|This implies|This suggests|This indicates|This shows|This demonstrates|This reveals|This highlights|This emphasizes|This underscores).*', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            
+            # Remove text after numbered lists that might be reasoning
+            clean_comp = re.sub(r'(\d+\.\s*[^.\n]*\.?)\s*\n\s*(?!\d+\.).*', r'\1', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            
+            # Clean up extra whitespace and newlines
+            clean_comp = re.sub(r'\n\s*\n\s*\n+', '\n\n', clean_comp)
+            clean_comp = re.sub(r'^\s+|\s+$', '', clean_comp, flags=re.MULTILINE)
+            
             filtered_completions.append(clean_comp.strip())
 
         new_item = dict(item)
