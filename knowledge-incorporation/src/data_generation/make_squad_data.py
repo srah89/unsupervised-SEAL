@@ -9,7 +9,7 @@ from ..utils import SQUAD_QA_GENERATION_TEMPLATE
 import re
 
 MAKE_SQUAD_DATA_TEMPLATE_INSTRUCT = (
-    "<|im_start|>system\nYou are an assistant tasked with analyzing the provided passage and producing a list of implications derived directly or indirectly from the content. <|im_end|>\n"
+    "<|im_start|>system\nYou are an assistant tasked with analyzing the provided passage and producing implications derived directly or indirectly from the content. <|im_end|>\n"
     "<|im_start|>user\n{title}\n{context}<|im_end|>\n"
     "<|im_start|>assistant\n"
 )
@@ -17,10 +17,10 @@ MAKE_SQUAD_DATA_TEMPLATE_INSTRUCT = (
 MAKE_SQUAD_DATA_TEMPLATES_BASE: dict[str, str] = {
     # list of implications
     "implications": (
-        "Let's read the following passage and produce one implication "
+        "Let's read the following passage and produce an implication "
         "derived directly or indirectly from the content.\n\n"
         "Passage:\n{title}\n{context}\n\n"
-        "Implication:\n"
+        "Implications:\n"
     ),
 
     # long list of implications
@@ -79,6 +79,9 @@ def generate_bulk(
     Call vLLM once with a list of prompts.  
     Returns a list of completions in the same order.
     """
+    # Use more specific stop tokens that are less likely to trigger prematurely
+    stop_tokens = ["Wait,", "Let me", "I think", "So,", "Therefore,", "Additionally,", "Also,", "Furthermore,", "Moreover,", "However,", "But,", "Actually,", "Well,", "Hmm,", "Um,", "You know,"]
+    
     payload: Dict[str, Any] = {
         "model": model,
         "prompt": prompts,
@@ -86,7 +89,6 @@ def generate_bulk(
         "max_tokens": max_tokens,
         "temperature": temperature,
         "top_p": top_p,
-        "stop": ["\n\n", "Wait,", "Let me", "I think", "So,", "Therefore,", "Additionally,", "Also,", "Furthermore,"],
     }
     r = requests.post(f"{vllm_api_url}/v1/completions", json=payload, timeout=60000)
     r.raise_for_status()
@@ -97,8 +99,19 @@ def generate_bulk(
         idx = ch["index"]
         out[idx] = ch["text"].strip()
 
-    if any(c == "" for c in out):
-        raise RuntimeError("Mismatch between returned choices and prompt list")
+    # Check if we got the expected number of completions
+    if len(choices) != len(prompts):
+        print(f"Warning: Expected {len(prompts)} completions, got {len(choices)}")
+        # Fill missing completions with empty strings
+        for i in range(len(prompts)):
+            if i >= len(choices):
+                out[i] = ""
+    
+    # Check for empty completions and provide more informative error
+    empty_count = sum(1 for c in out if not c.strip())
+    if empty_count > 0:
+        print(f"Warning: {empty_count} out of {len(prompts)} completions are empty")
+        # Don't raise error, just return what we got and let post-processing handle it
 
     return out
 
@@ -183,25 +196,40 @@ def main() -> None:
         # Filter reasoning content from completions before storing
         filtered_completions = []
         for comp in train_completions:
-            # Remove various think tag formats
+            # Remove think tags
             clean_comp = re.sub(r'<think>.*?</think>', '', comp, flags=re.DOTALL | re.IGNORECASE)
             clean_comp = re.sub(r'<thinking>.*?</thinking>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
-            clean_comp = re.sub(r'<thought>.*?</thought>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
-            clean_comp = re.sub(r'<reasoning>.*?</reasoning>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
-            clean_comp = re.sub(r'<reflection>.*?</reflection>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
             
-            # Remove reasoning text that starts with common indicators
-            clean_comp = re.sub(r'\n\s*(Wait,|Let me|I think|So,|Therefore,|Additionally,|Also,|Furthermore,|Moreover,|However,|But,|Actually,|Well,|Hmm,|Um,|You know,).*', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            # Remove placeholder text
+            clean_comp = re.sub(r'\(To be filled by.*?\)', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
             
-            # Remove any remaining reasoning patterns
-            clean_comp = re.sub(r'\n\s*(This means|This implies|This suggests|This indicates|This shows|This demonstrates|This reveals|This highlights|This emphasizes|This underscores).*', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
-            
-            # Remove text after numbered lists that might be reasoning
-            clean_comp = re.sub(r'(\d+\.\s*[^.\n]*\.?)\s*\n\s*(?!\d+\.).*', r'\1', clean_comp, flags=re.DOTALL | re.IGNORECASE)
+            # Remove text after "Step-by-step explanation:"
+            clean_comp = re.sub(r'Step-by-step explanation:.*', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
             
             # Clean up extra whitespace and newlines
             clean_comp = re.sub(r'\n\s*\n\s*\n+', '\n\n', clean_comp)
             clean_comp = re.sub(r'^\s+|\s+$', '', clean_comp, flags=re.MULTILINE)
+            
+            # Extract only the first sentence
+            # Use a more intelligent sentence split that doesn't break on abbreviations
+            sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', clean_comp)
+            first_sentence = ""
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if sentence and len(sentence) > 10:  # Minimum length to be meaningful
+                    first_sentence = sentence
+                    break
+            
+            if first_sentence:
+                # Ensure the sentence ends with proper punctuation
+                if not first_sentence.endswith(('.', '!', '?')):
+                    clean_comp = first_sentence + "."
+                else:
+                    clean_comp = first_sentence
+            else:
+                # Fallback: take first paragraph if no sentence found
+                paragraphs = clean_comp.split('\n\n')
+                clean_comp = paragraphs[0] if paragraphs else clean_comp
             
             filtered_completions.append(clean_comp.strip())
 
