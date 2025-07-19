@@ -10,7 +10,8 @@ source /venv/main/bin/activate
 cd /workspace/SEAL
 mkdir -p logs
 # -------- User-editable ---------------------------------------------- #
-MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"  # model to use for data generation. For evaluation, set to the model to be evaluated. For RL training, set to the (n-1)'th RL checkpoint.
+# MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"  # model to use for data generation. For evaluation, set to the model to be evaluated. For RL training, set to the (n-1)'th RL checkpoint.
+MODEL_NAME="Qwen/Qwen2.5-7B"  # model to use for data generation. For evaluation, set to the model to be evaluated. For RL training, set to the (n-1)'th RL checkpoint.
 PORT=8001
 DATASET_IN="knowledge-incorporation/data/squad_train.json"
 DATASET_OUT="knowledge-incorporation/data/synthetic_data/train/iter0_train.json"
@@ -23,7 +24,9 @@ K=5                          # number of completions to generate per question
 TEMPERATURE=1.0
 TOP_P=0.95
 MAX_TOKENS=8192
-PROMPT_KEY="self-qa"    # Available options: implications, implications-long, implications-very-long, rewrite, self-qa
+PROMPT_KEY="implications"    # Available options: implications, implications-long, implications-very-long, rewrite, self-qa
+QA_GENERATIONS=1             # number of Q&A generations per passage (reduced from 5)
+MAX_QUESTIONS_PER_COMPLETION=5  # maximum questions to extract per completion (reduced from 3)
 # --------------------------------------------------------------------- #
 
 VLLM_HOST=$(hostname -i)
@@ -53,8 +56,9 @@ python3 -m knowledge-incorporation.src.data_generation.make_squad_data \
     --temperature "$TEMPERATURE" \
     --top_p "$TOP_P" \
     --prompt_key "$PROMPT_KEY" \
-    ${INSTRUCT_MODEL:+--instruct_model} \
-    --max_tokens "$MAX_TOKENS"
+    --max_tokens "$MAX_TOKENS" \
+    --qa_generations "$QA_GENERATIONS" \
+    --max_questions_per_completion "$MAX_QUESTIONS_PER_COMPLETION"
 
 echo "Shutting down vLLM"
 kill $VLLM_PID

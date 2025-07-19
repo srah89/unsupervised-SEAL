@@ -11,7 +11,7 @@ import re
 
 #Local Question Generation
 SQUAD_QA_GENERATION_TEMPLATE = (
-    "Read the following passage carefully and generate 5 high-quality question-answer pairs that test comprehension of the key information. "
+    "Read the following passage carefully and generate EXACTLY 5 high-quality question-answer pairs that test comprehension of the key information. "
     "Each question should:\n"
     "- Ask about specific facts, details, or concepts mentioned in the passage\n"
     "- Have a clear, concise answer that can be found directly in the text\n"
@@ -20,7 +20,7 @@ SQUAD_QA_GENERATION_TEMPLATE = (
     "Passage:\n"
     "Title: {title}\n"
     "{context}\n\n"
-    "Generate exactly 5 question-answer pairs in this format:\n"
+    "Generate EXACTLY 5 question-answer pairs in this format:\n"
     "Question 1: [question]\n"
     "Answer 1: [answer]\n\n"
     "Question 2: [question]\n"
@@ -30,8 +30,7 @@ SQUAD_QA_GENERATION_TEMPLATE = (
     "Question 4: [question]\n"
     "Answer 4: [answer]\n\n"
     "Question 5: [question]\n"
-    "Answer 5: [answer]\n\n"
-    "Question 1:"
+    "Answer 5: [answer]"
 )
 
 # Qwen-base answering template

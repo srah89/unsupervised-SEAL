@@ -80,7 +80,7 @@ def generate_bulk(
     Returns a list of completions in the same order.
     """
     # Use more specific stop tokens that are less likely to trigger prematurely
-    stop_tokens = ["Wait,", "Let me", "I think", "So,", "Therefore,", "Additionally,", "Also,", "Furthermore,", "Moreover,", "However,", "But,", "Actually,", "Well,", "Hmm,", "Um,", "You know,"]
+    stop_tokens = ["Wait,", "Let me", "I think", "So,", "Therefore,", "Additionally,", "Also,", "Furthermore,", "Moreover,", "However,", "But,", "Actually,", "Well,", "Hmm,", "Um,", "You know,", "Question 6:", "Question 7:", "Question 8:", "Question 9:", "Question 10:"]
     
     payload: Dict[str, Any] = {
         "model": model,
@@ -131,15 +131,30 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
 
     questions = []
     
-    # Find all question-answer pairs
-    pattern = r"Question \d+:\s*(.*?)\s*Answer \d+:\s*(.*?)(?=(?:\n\n)?Question \d+:|\Z)"
+    # Find all question-answer pairs with more strict matching
+    # Only match the exact format: "Question X: [text] Answer X: [text]"
+    # Limit to first 5 questions only
+    pattern = r"Question\s+(\d+):\s*(.*?)(?:\s+Answer\s+\1:\s*(.*?))(?=(?:\n\n)?Question\s+\d+:|$)"
     matches = re.findall(pattern, qa_text, re.DOTALL | re.IGNORECASE)
     
-    for question, answer in matches:
+    # Only take the first 5 matches to avoid duplicates
+    matches = matches[:5]
+    
+    # Filter out matches where question and answer numbers don't match
+    valid_matches = []
+    for match in matches:
+        q_num, question, answer = match
+        if question.strip() and answer.strip():
+            valid_matches.append((question, answer))
+    
+    for question, answer in valid_matches:
         questions.append({
             "question": question.strip(),
             "answer": answer.strip()
         })
+    
+    # Hard limit to 5 questions maximum per completion
+    questions = questions[:5]
     
     return questions
 
@@ -160,6 +175,7 @@ def main() -> None:
     p.add_argument("--generate_questions", action="store_true", default=True, help="Generate questions for evaluation")
     p.add_argument("--no_generate_questions", action="store_false", dest="generate_questions", help="Skip question generation")
     p.add_argument("--qa_generations", type=int, default=5, help="Number of Q&A generations per passage")
+    p.add_argument("--max_questions_per_completion", type=int, default=5, help="Maximum questions to extract per completion")
     args = p.parse_args()
 
     # -------- load data + build ALL prompts in one go ----------------------- #
@@ -245,7 +261,9 @@ def main() -> None:
             generated_questions = []
             for qa_text in qa_completions:
                 parsed_qs = parse_qa_pairs(qa_text)
-                generated_questions.extend(parsed_qs)
+                # Limit the number of questions per completion
+                limited_qs = parsed_qs[:args.max_questions_per_completion]
+                generated_questions.extend(limited_qs)
             
             new_item["questions"] = generated_questions
             new_item["qa_prompt"] = make_prompt(title=item["title"], context=item["context"], instruct_model=args.instruct_model, prompt_key="qa-generation")
@@ -272,6 +290,7 @@ def main() -> None:
         "k": args.k,
         "generate_questions": args.generate_questions,
         "qa_generations": args.qa_generations if args.generate_questions else 0,
+        "max_questions_per_completion": args.max_questions_per_completion if args.generate_questions else 0,
         "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
     }
     meta_path = out_path.with_suffix(out_path.suffix + ".meta")
