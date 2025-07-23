@@ -25,7 +25,7 @@ EXPERIMENTS=(
     
     # TRAINING OPTIONS (uncomment one to switch back to training):
     # "rank_iter0 knowledge-incorporation/data/synthetic_data/train/iter0_train.json  3  2  32  64  0  5  1e-3  1  1 1"  # Singleton
-    # "rank_iter0 knowledge-incorporation/data/synthetic_data/train/iter0_train.json  3  2  32  64  0  5  1e-3  1  1 10"  # Medium
+    "rank_iter0 knowledge-incorporation/data/synthetic_data/train/iter0_train.json  3  2  32  64  0  5  1e-3  1  1 10"  # Medium
     # "rank_iter0 knowledge-incorporation/data/synthetic_data/train/iter0_train.json  5  3  32  64  0  10  1e-3  1  1 50"  # Original (slow)
 )
 

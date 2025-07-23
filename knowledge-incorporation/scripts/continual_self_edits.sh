@@ -13,7 +13,8 @@ mkdir -p logs
 # -------- User-editable ---------------------------------------------- #
 INDEX=0  # Index for this job, used to differentiate runs
 
-MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"   # initialized model. Use the last RL checkpoint
+# MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"   # initialized model. Use the last RL checkpoint
+MODEL_NAME="Qwen/Qwen2.5-7B"   # initialized model. Use the last RL checkpoint
 DATASET="knowledge-incorporation/data/squad_val.json"  # evaluation dataset
 OUTPUT_DIR="knowledge-incorporation/results/continual_self_edits/run${INDEX}"
 mkdir -p "${OUTPUT_DIR}"

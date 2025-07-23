@@ -3,8 +3,7 @@ data/
 combined_data/
 */data/
 
-# Specific data directories and files
-knowledge-incorporation/data/
+# Note: knowledge-incorporation/data/ is now included in git
 
 # Large data files
 *.arrow

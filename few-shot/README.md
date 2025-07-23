@@ -14,7 +14,7 @@ python self-edit.py \
     --experiment_name=training_set_iteration_1 \
     --challenge_file=${DATA_DIR}/arc-agi_training_challenges_filtered_1B_training_set.json \
     --solution_file=${DATA_DIR}/arc-agi_training_solutions_filtered_1B_training_set.json \
-    --model_name=meta-llama/Llama-3.2-1B-Instruct \
+    --model_name=Qwen/Qwen2.5-7B \
     --n_tasks=12 \
     --n_self_edits_per_task=15
 ```
@@ -26,7 +26,7 @@ Evaluate the trained LoRAs from iteration 1:
 ```bash
 python eval-self-edits.py \
     --experiment_folder=${TTI_DIR}/training_set_iteration_1 \
-    --pretrained_checkpoint=meta-llama/Llama-3.2-1B-Instruct \
+    --pretrained_checkpoint=Qwen/Qwen2.5-7B \
     --lora_checkpoints_folder=${LORA_DIR}/self-edit/training_set_iteration_1 \
     --temperature=0 \
     --n_sample=1 \
@@ -47,7 +47,7 @@ Run RestEM training for 8 epochs:
 python BC-self-edit.py \
     --configs_and_indices=${LORA_DIR}/self-edit/training_set_iteration_1/final_configs_and_indices.json \
     --results=${LORA_DIR}/self-edit/training_set_iteration_1/final_results.json \
-    --model_name=meta-llama/Llama-3.2-1B-Instruct \
+    --model_name=Qwen/Qwen2.5-7B \
     --lora_rank=16 \
     --lora_alpha=16 \
     --num_train_epochs=8 \
@@ -99,7 +99,7 @@ Evaluate the baseline model performance:
 ```bash
 python eval-self-edits-baseline.py \
     --experiment_folder=${TTI_DIR}/eval_base_model \
-    --pretrained_checkpoint=meta-llama/Llama-3.2-1B-Instruct \
+    --pretrained_checkpoint=Qwen/Qwen2.5-7B \
     --lora_checkpoints_folder=${LORA_DIR}/self-edit/eval_RL_iteration_1_8_epoch \
     --temperature=0 \
     --n_sample=1 \
@@ -129,7 +129,7 @@ python self-edit.py \
 
 ## Notes
 
-- All experiments use the Llama-3.2-1B-Instruct base model
+- All experiments use the Qwen/Qwen2.5-7B base model
 - The experiments are designed to iteratively improve performance through self-editing and reinforcement learning
 - Evaluation is performed on filtered ARC-AGI datasets for both training and evaluation sets
 - LoRA (Low-Rank Adaptation) is used for efficient fine-tuning with various rank configurations

@@ -11,7 +11,8 @@ cd /workspace/SEAL
 mkdir -p logs
 
 # -------- User-editable ---------------------------------------------- #
-MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"  # Put the (n-1)'th RL checkpoint. This script then trains the n'th checkpoint. The 0'th checkpoint is the base model.
+# MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"  # Put the (n-1)'th RL checkpoint. This script then trains the n'th checkpoint. The 0'th checkpoint is the base model.
+MODEL_NAME="Qwen/Qwen2.5-7B"  # Put the (n-1)'th RL checkpoint. This script then trains the n'th checkpoint. The 0'th checkpoint is the base model.
 TRAIN_FILE="knowledge-incorporation/data/synthetic_data/EM_SFT/sft_best1of3_0706_214926.jsonl"  # Path to training data output by src/EM/build_SFT_dataset.py
 OUTPUT_DIR="models/iter1"
 mkdir -p "${OUTPUT_DIR}"

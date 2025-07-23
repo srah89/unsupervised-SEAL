@@ -139,7 +139,7 @@ def evaluate_completion(ctx, endpoint, item: Dict[str, Any], comp_raw: str, args
     # Auto-detect training vs evaluation mode
     if comp_raw.strip():
         # Training mode: Build training sequences for fine-tuning
-    train_sequences = build_train_sequences(comp_raw, context, title, split_newlines=args.split_newlines)
+         train_sequences = build_train_sequences(comp_raw, context, title, split_newlines=args.split_newlines)
     else:
         # Evaluation mode: Empty training sequences (no fine-tuning)
         train_sequences = []

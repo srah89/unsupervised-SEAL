@@ -119,6 +119,10 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
     """Parse generated QA text into structured format"""
     import re
     
+    # Check if text is too short to contain questions
+    if len(qa_text.strip()) < 50:  # Less than 50 characters is unlikely to contain questions
+        return [], ["Text too short"]
+    
     # Remove various think tag formats
     qa_text = re.sub(r'<think>.*?</think>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
     qa_text = re.sub(r'<thinking>.*?</thinking>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
@@ -128,24 +132,73 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
     
     # Remove reasoning text that starts with common indicators
     qa_text = re.sub(r'\n\s*(Wait,|Let me|I think|So,|Therefore,|Additionally,|Also,|Furthermore,|Moreover,|However,|But,|Actually,|Well,|Hmm,|Um,|You know,).*', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Remove markdown headers that might interfere
+    qa_text = re.sub(r'^#+\s*.*?\n', '', qa_text, flags=re.MULTILINE)
+    
+    # Remove introductory text like "Sure! Here are five question-answer pairs..."
+    qa_text = re.sub(r'^.*?question-answer pairs.*?\n', '', qa_text, flags=re.IGNORECASE | re.DOTALL)
+    qa_text = re.sub(r'^.*?high-quality question-answer pairs.*?\n', '', qa_text, flags=re.IGNORECASE | re.DOTALL)
 
     questions = []
     
-    # Find all question-answer pairs with more strict matching
-    # Only match the exact format: "Question X: [text] Answer X: [text]"
-    # Limit to first 5 questions only
-    pattern = r"Question\s+(\d+):\s*(.*?)(?:\s+Answer\s+\1:\s*(.*?))(?=(?:\n\n)?Question\s+\d+:|$)"
-    matches = re.findall(pattern, qa_text, re.DOTALL | re.IGNORECASE)
+    # Try multiple patterns to be more robust
+    patterns = [
+        # Strict pattern: Question X: [text] Answer X: [text]
+        r"Question\s+(\d+):\s*(.*?)(?:\s+Answer\s+\1:\s*(.*?))(?=(?:\n\n)?Question\s+\d+:|$)",
+        # More flexible pattern: Question X: [text] Answer Y: [text] (numbers don't need to match)
+        r"Question\s+\d+:\s*(.*?)(?:\s+Answer\s+\d+:\s*(.*?))(?=(?:\n\n)?Question\s+\d+:|$)",
+        # Very flexible pattern: just look for Question/Answer pairs
+        r"Question\s+\d*:?\s*(.*?)(?:\s+Answer\s+\d*:?\s*(.*?))(?=(?:\n\n)?(?:Question|$))",
+        # Ultra flexible: look for any text that contains "Question" and "Answer"
+        r"(?:Question|Q)\s*\d*:?\s*(.*?)(?:\s+(?:Answer|A)\s*\d*:?\s*(.*?))(?=(?:\n\n)?(?:Question|Q|$))",
+        # Numbered list format: 1. [question] Answer: [answer]
+        r"(\d+)\.\s*(.*?)(?:\s+Answer\s*:?\s*(.*?))(?=(?:\n\n)?\d+\.|$)",
+        # Numbered list format: 1. [question] Answer 1: [answer]
+        r"(\d+)\.\s*(.*?)(?:\s+Answer\s*\d*:?\s*(.*?))(?=(?:\n\n)?\d+\.|$)",
+        # Markdown format: 1. [question] - [answer]
+        r"(\d+)\.\s*(.*?)(?:\s+-\s*(.*?))(?=(?:\n\n)?\d+\.|$)",
+        # Markdown format: 1. [question] [newline] - [answer]
+        r"(\d+)\.\s*(.*?)(?:\s*\n\s*-\s*(.*?))(?=(?:\n\n)?\d+\.|$)",
+        # Markdown headers: ### Question 1: [question] ###/#### Answer 1: [answer]
+        r"###\s*Question\s*(\d+):\s*(.*?)(?:\s*#{3,4}\s*Answer\s*\1:\s*(.*?))(?=(?:\n\n)?###\s*Question|$)",
+        # Simple format: Question\nAnswer 1: [answer]
+        r"(?:Question|Q)\s*(?:\d+)?:?\s*(.*?)(?:\s*\n\s*Answer\s*\d*:?\s*(.*?))(?=(?:\n\n)?(?:Question|Q)|$)",
+        # Numbered format: 1. [question]\nAnswer 1: [answer]
+        r"(\d+)\.\s*(.*?)(?:\s*\n\s*Answer\s*\d*:?\s*(.*?))(?=(?:\n\n)?\d+\.|$)",
+        # Multiple choice format: 1. [question]\nA. [answer]
+        r"(\d+)\.\s*(.*?)(?:\s*\n\s*[A-Z]\.\s*(.*?))(?=(?:\n\n)?\d+\.|$)",
+        # Simple Q&A format: Question\nAnswer: [answer]
+        r"(.*?)(?:\s*\n\s*Answer:?\s*(.*?))(?=(?:\n\n)?(?:[A-Z]|$))",
+        # Markdown question only: ### Question 1: [question] (no answer pattern)
+        r"###\s*Question\s*(\d+):\s*(.*?)(?=(?:\n\n)?###\s*Question|$)",
+    ]
     
-    # Only take the first 5 matches to avoid duplicates
-    matches = matches[:5]
+    matches = []
+    debug_info = []
+    for i, pattern in enumerate(patterns):
+        pattern_matches = re.findall(pattern, qa_text, re.DOTALL | re.IGNORECASE)
+        debug_info.append(f"Pattern {i+1}: {len(pattern_matches)} matches")
+        if pattern_matches:
+            matches = pattern_matches[:5]  # Limit to first 5
+            break
+    
+    # If no matches found, add debug info to the return
+    if not matches:
+        return [], debug_info
     
     # Filter out matches where question and answer numbers don't match
     valid_matches = []
     for match in matches:
-        q_num, question, answer = match
-        if question.strip() and answer.strip():
-            valid_matches.append((question, answer))
+        if len(match) >= 2:
+            # Handle both Question X: format and numbered list format
+            if match[0].isdigit():  # Numbered list format: (number, question, answer)
+                question, answer = match[1], match[2] if len(match) > 2 else ""
+            else:  # Question format: (question, answer)
+                question, answer = match[0], match[1]
+            
+            if question.strip() and answer.strip():
+                valid_matches.append((question, answer))
     
     for question, answer in valid_matches:
         questions.append({
@@ -156,7 +209,7 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
     # Hard limit to 5 questions maximum per completion
     questions = questions[:5]
     
-    return questions
+    return questions, debug_info
 
 def main() -> None:
     p = argparse.ArgumentParser()
@@ -258,9 +311,29 @@ def main() -> None:
             qa_completions = completions[comp_idx:comp_idx + args.qa_generations]
             comp_idx += args.qa_generations
             
+            # Retry empty completions with a different prompt
+            empty_indices = [i for i, comp in enumerate(qa_completions) if not comp.strip()]
+            if empty_indices:
+                print(f"Retrying {len(empty_indices)} empty completions...")
+                retry_prompts = []
+                for i in empty_indices:
+                    retry_prompt = make_prompt(title=item["title"], context=item["context"], instruct_model=args.instruct_model, prompt_key="qa-generation")
+                    # Use a simpler prompt for retry
+                    retry_prompt = retry_prompt.replace("GENERATE EXACTLY 5", "Please generate 5")
+                    retry_prompts.append(retry_prompt)
+                
+                retry_completions = generate_bulk(args.vllm_api_url, retry_prompts, args.model, args.max_tokens, args.temperature, args.top_p)
+                
+                # Replace empty completions with retry results
+                for i, retry_comp in zip(empty_indices, retry_completions):
+                    qa_completions[i] = retry_comp
+            
             generated_questions = []
-            for qa_text in qa_completions:
-                parsed_qs = parse_qa_pairs(qa_text)
+            no_questions_count = 0
+            for i, qa_text in enumerate(qa_completions):
+                parsed_qs, debug_info = parse_qa_pairs(qa_text)
+                if not parsed_qs:
+                    no_questions_count += 1
                 # Limit the number of questions per completion
                 limited_qs = parsed_qs[:args.max_questions_per_completion]
                 generated_questions.extend(limited_qs)
@@ -270,13 +343,28 @@ def main() -> None:
         else:
             new_item["questions"] = item.get("questions", [])
 
-        out_data.append(new_item)
+        # Only include articles that have questions (for better training)
+        if not args.generate_questions or new_item.get("questions"):
+            out_data.append(new_item)
+        else:
+            print(f"Skipping article '{item['title'][:50]}...' - no questions generated")
 
     # -------- save once ----------------------- #
     out_path = Path(args.dataset_out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     json.dump(out_data, open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(f"Saved → {out_path}  ({len(out_data)} records)")
+    
+    # Print summary statistics
+    total_articles = len(out_data)
+    total_questions = sum(len(item.get("questions", [])) for item in out_data)
+    articles_with_questions = sum(1 for item in out_data if item.get("questions"))
+    print(f"\nSUMMARY:")
+    print(f"Total articles: {total_articles}")
+    print(f"Articles with questions: {articles_with_questions}")
+    print(f"Articles without questions: {total_articles - articles_with_questions}")
+    print(f"Total questions generated: {total_questions}")
+    print(f"Average questions per article: {total_questions/total_articles:.1f}")
 
     # -------- write metadata ----------------------- #
     meta = {

@@ -11,7 +11,8 @@ cd /workspace/SEAL
 mkdir -p logs
 
 # -------- User-editable ---------------------------------------------- #
-MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"  # HF model name or path to RL checkpoint (e.g. models/iter1)
+# MODEL_NAME="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"  # HF model name or path to RL checkpoint (e.g. models/iter1)
+MODEL_NAME="Qwen/Qwen2.5-7B"  # HF model name or path to RL checkpoint (e.g. models/iter1)
 VLLM_SERVER_GPUS="0"
 INNER_LOOP_GPU="0"
 PORT=18000
@@ -46,7 +47,7 @@ CUDA_VISIBLE_DEVICES=${VLLM_SERVER_GPUS} vllm serve "${MODEL_NAME}" \
     --host "${VLLM_HOST}" \
     --port ${PORT} \
     --max-model-len 4096 \
-    --gpu-memory-utilization 0.7 \
+    --gpu-memory-utilization 0.5 \
     --enable-lora \
     --max-lora-rank ${MAX_LORA_RANK} \
     --trust-remote-code \

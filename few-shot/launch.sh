@@ -11,7 +11,7 @@ conda activate seal_env
 
 python eval-self-edits-baseline.py \
   --experiment_folder="~/tti/eval_base_model" \
-  --pretrained_checkpoint=meta-llama/Llama-3.2-1B-Instruct \
+  --pretrained_checkpoint=Qwen/Qwen2.5-7B \
   --lora_checkpoints_folder="~/few-shot/loras/self-edit/eval_RL_iteration_1_8_epoch" \
   --temperature=0 \
   --n_sample=1 \
