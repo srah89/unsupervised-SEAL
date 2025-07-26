@@ -1,4 +1,4 @@
-(unsupervised) Self-Adapting Language Models
+# (unsupervised) Self-Adapting Language Models
 
 Original SEAL Paper and website: [Paper](https://arxiv.org/abs/2506.10943), [Website](https://jyopari.github.io/posts/seal)
 
