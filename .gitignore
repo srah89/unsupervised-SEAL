@@ -2,6 +2,10 @@
 data/
 combined_data/
 */data/
+Dockerfile
+docker-compose.yml
+docker-run.sh
+.dockerignore
 
 # Note: knowledge-incorporation/data/ is now included in git
 

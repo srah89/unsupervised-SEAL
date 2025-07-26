@@ -50,8 +50,7 @@ from ..utils import (
     generate,
     format_answer_prompts,
     format_grade_prompts,
-    grade_with_gpt4,
-    grade_with_local_llm,
+   grade_with_local_llm,
 )
 
 # ---------------------------  CONFIG & LOGGING  ----------------------- #

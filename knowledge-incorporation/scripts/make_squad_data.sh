@@ -18,7 +18,7 @@ DATASET_OUT="knowledge-incorporation/data/synthetic_data/train/iter0_train.json"
 # DATASET_IN="knowledge-incorporation/data/squad_val.json"
 # DATASET_OUT="knowledge-incorporation/data/synthetic_data/eval/base_val.json"
 
-NUM_ARTICLES=3             # how many articles (-1 for all, reduce for testing)
+NUM_ARTICLES=100             # how many articles (-1 for all, reduce for testing)
 START_ARTICLE=0              # start from this article number
 K=5                          # number of completions to generate per question
 TEMPERATURE=1.0
