@@ -99,19 +99,15 @@ def generate_bulk(
         idx = ch["index"]
         out[idx] = ch["text"].strip()
 
-    # Check if we got the expected number of completions
     if len(choices) != len(prompts):
         print(f"Warning: Expected {len(prompts)} completions, got {len(choices)}")
-        # Fill missing completions with empty strings
         for i in range(len(prompts)):
             if i >= len(choices):
                 out[i] = ""
     
-    # Check for empty completions and provide more informative error
     empty_count = sum(1 for c in out if not c.strip())
     if empty_count > 0:
         print(f"Warning: {empty_count} out of {len(prompts)} completions are empty")
-        # Don't raise error, just return what we got and let post-processing handle it
 
     return out
 
@@ -119,30 +115,24 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
     """Parse generated QA text into structured format"""
     import re
     
-    # Check if text is too short to contain questions
-    if len(qa_text.strip()) < 50:  # Less than 50 characters is unlikely to contain questions
+    if len(qa_text.strip()) < 50: 
         return [], ["Text too short"]
     
-    # Remove various think tag formats
     qa_text = re.sub(r'<think>.*?</think>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
     qa_text = re.sub(r'<thinking>.*?</thinking>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
     qa_text = re.sub(r'<thought>.*?</thought>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
     qa_text = re.sub(r'<reasoning>.*?</reasoning>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
     qa_text = re.sub(r'<reflection>.*?</reflection>', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
     
-    # Remove reasoning text that starts with common indicators
     qa_text = re.sub(r'\n\s*(Wait,|Let me|I think|So,|Therefore,|Additionally,|Also,|Furthermore,|Moreover,|However,|But,|Actually,|Well,|Hmm,|Um,|You know,).*', '', qa_text, flags=re.DOTALL | re.IGNORECASE)
     
-    # Remove markdown headers that might interfere
     qa_text = re.sub(r'^#+\s*.*?\n', '', qa_text, flags=re.MULTILINE)
     
-    # Remove introductory text like "Sure! Here are five question-answer pairs..."
     qa_text = re.sub(r'^.*?question-answer pairs.*?\n', '', qa_text, flags=re.IGNORECASE | re.DOTALL)
     qa_text = re.sub(r'^.*?high-quality question-answer pairs.*?\n', '', qa_text, flags=re.IGNORECASE | re.DOTALL)
 
     questions = []
     
-    # Try multiple patterns to be more robust
     patterns = [
         # Strict pattern: Question X: [text] Answer X: [text]
         r"Question\s+(\d+):\s*(.*?)(?:\s+Answer\s+\1:\s*(.*?))(?=(?:\n\n)?Question\s+\d+:|$)",
@@ -180,21 +170,18 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
         pattern_matches = re.findall(pattern, qa_text, re.DOTALL | re.IGNORECASE)
         debug_info.append(f"Pattern {i+1}: {len(pattern_matches)} matches")
         if pattern_matches:
-            matches = pattern_matches[:5]  # Limit to first 5
+            matches = pattern_matches[:5]  
             break
     
-    # If no matches found, add debug info to the return
     if not matches:
         return [], debug_info
     
-    # Filter out matches where question and answer numbers don't match
     valid_matches = []
     for match in matches:
         if len(match) >= 2:
-            # Handle both Question X: format and numbered list format
-            if match[0].isdigit():  # Numbered list format: (number, question, answer)
+            if match[0].isdigit():  
                 question, answer = match[1], match[2] if len(match) > 2 else ""
-            else:  # Question format: (question, answer)
+            else:  
                 question, answer = match[0], match[1]
             
             if question.strip() and answer.strip():
@@ -206,31 +193,6 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
             "answer": answer.strip()
         })
     
-    # Hard limit to 5 questions maximum per completion
-    questions = questions[:5]
-    
-    return questions, debug_info
-
-def main() -> None:
-    p = argparse.ArgumentParser()
-    p.add_argument("--vllm_api_url", required=True, help="e.g. http://localhost:8001")
-    p.add_argument("--model", default="deepseek-ai/DeepSeek-R1-Distill-Llama-8B", help="HF model name")
-    p.add_argument("--instruct_model", action="store_true", help="Using instruction model")
-    p.add_argument("--dataset_in", required=True, help="Path to the input dataset")
-    p.add_argument("--dataset_out", required=True, help="Path to the output dataset")
-    p.add_argument("--n", type=int, default=-1, help="How many articles to process")
-    p.add_argument("--start", type=int, default=0, help="Start index for processing")
-    p.add_argument('--k', type=int, default=5, help='Completions per article')
-    p.add_argument('--temperature', type=float, default=1.0, help='Sampling temperature')
-    p.add_argument('--top_p', type=float, default=0.95, help='Nucleus sampling (top-p)')
-    p.add_argument("--max_tokens", type=int, default=8192, help="Max tokens to generate")
-    p.add_argument("--prompt_key", default="implications", choices=list(MAKE_SQUAD_DATA_TEMPLATES_BASE.keys()), help="Which prompt to use")
-    p.add_argument("--generate_questions", action="store_true", default=True, help="Generate questions for evaluation")
-    p.add_argument("--no_generate_questions", action="store_false", dest="generate_questions", help="Skip question generation")
-    p.add_argument("--qa_generations", type=int, default=5, help="Number of Q&A generations per passage")
-    p.add_argument("--max_questions_per_completion", type=int, default=5, help="Maximum questions to extract per completion")
-    args = p.parse_args()
-
     # -------- load data + build ALL prompts in one go ----------------------- #
     raw: List[Dict[str, Any]] = json.load(open(args.dataset_in, encoding="utf-8"))
     random.seed(42)
@@ -239,7 +201,7 @@ def main() -> None:
 
     prompts: List[str] = []
     for item in subset:
-        # Training data prompts
+        
         train_prompt = make_prompt(title=item["title"], context=item["context"], instruct_model=args.instruct_model, prompt_key=args.prompt_key)
         prompts.extend([train_prompt] * args.k)
         
@@ -258,45 +220,35 @@ def main() -> None:
     comp_idx = 0
     
     for item in subset:
-        # Extract training completions
         train_completions = completions[comp_idx:comp_idx + args.k]
         comp_idx += args.k
 
-        # Filter reasoning content from completions before storing
         filtered_completions = []
         for comp in train_completions:
-            # Remove think tags
             clean_comp = re.sub(r'<think>.*?</think>', '', comp, flags=re.DOTALL | re.IGNORECASE)
             clean_comp = re.sub(r'<thinking>.*?</thinking>', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
             
-            # Remove placeholder text
             clean_comp = re.sub(r'\(To be filled by.*?\)', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
             
-            # Remove text after "Step-by-step explanation:"
             clean_comp = re.sub(r'Step-by-step explanation:.*', '', clean_comp, flags=re.DOTALL | re.IGNORECASE)
             
-            # Clean up extra whitespace and newlines
             clean_comp = re.sub(r'\n\s*\n\s*\n+', '\n\n', clean_comp)
             clean_comp = re.sub(r'^\s+|\s+$', '', clean_comp, flags=re.MULTILINE)
             
-            # Extract only the first sentence
-            # Use a more intelligent sentence split that doesn't break on abbreviations
             sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', clean_comp)
             first_sentence = ""
             for sentence in sentences:
                 sentence = sentence.strip()
-                if sentence and len(sentence) > 10:  # Minimum length to be meaningful
+                if sentence and len(sentence) > 10:  
                     first_sentence = sentence
                     break
             
             if first_sentence:
-                # Ensure the sentence ends with proper punctuation
                 if not first_sentence.endswith(('.', '!', '?')):
                     clean_comp = first_sentence + "."
                 else:
                     clean_comp = first_sentence
             else:
-                # Fallback: take first paragraph if no sentence found
                 paragraphs = clean_comp.split('\n\n')
                 clean_comp = paragraphs[0] if paragraphs else clean_comp
             
@@ -306,7 +258,6 @@ def main() -> None:
         new_item["completions"] = filtered_completions
         new_item["prompt"] = make_prompt(title=item["title"], context=item["context"], instruct_model=args.instruct_model, prompt_key=args.prompt_key)
         
-        # Extract Q&A completions (if enabled)
         if args.generate_questions:
             qa_completions = completions[comp_idx:comp_idx + args.qa_generations]
             comp_idx += args.qa_generations
@@ -318,13 +269,11 @@ def main() -> None:
                 retry_prompts = []
                 for i in empty_indices:
                     retry_prompt = make_prompt(title=item["title"], context=item["context"], instruct_model=args.instruct_model, prompt_key="qa-generation")
-                    # Use a simpler prompt for retry
                     retry_prompt = retry_prompt.replace("GENERATE EXACTLY 5", "Please generate 5")
                     retry_prompts.append(retry_prompt)
                 
                 retry_completions = generate_bulk(args.vllm_api_url, retry_prompts, args.model, args.max_tokens, args.temperature, args.top_p)
                 
-                # Replace empty completions with retry results
                 for i, retry_comp in zip(empty_indices, retry_completions):
                     qa_completions[i] = retry_comp
             
@@ -334,7 +283,6 @@ def main() -> None:
                 parsed_qs, debug_info = parse_qa_pairs(qa_text)
                 if not parsed_qs:
                     no_questions_count += 1
-                # Limit the number of questions per completion
                 limited_qs = parsed_qs[:args.max_questions_per_completion]
                 generated_questions.extend(limited_qs)
             
@@ -343,7 +291,6 @@ def main() -> None:
         else:
             new_item["questions"] = item.get("questions", [])
 
-        # Only include articles that have questions (for better training)
         if not args.generate_questions or new_item.get("questions"):
             out_data.append(new_item)
         else:
