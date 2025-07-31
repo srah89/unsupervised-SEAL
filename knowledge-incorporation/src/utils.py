@@ -200,6 +200,29 @@ def grade_with_string_matching(prompts: List[str]) -> List[bool]:
     return verdicts
 
 
+def grade_answers(
+    q_batch: List[Dict[str, str]], 
+    preds: List[str],
+    model_ref: str = None,
+    stop_ids: List[int] = None,
+    instruct_model: bool = False,
+    use_local_llm: bool = True
+) -> List[bool]:
+    """
+    Default grading function that uses local LLM by default.
+    Falls back to string matching if local LLM is not available.
+    """
+    if use_local_llm and model_ref and stop_ids:
+        try:
+            return grade_with_local_llm(q_batch, preds, model_ref, stop_ids, instruct_model)
+        except Exception as e:
+            logging.warning(f"Local LLM grading failed, falling back to string matching: {e}")
+    
+    # Fallback to string matching
+    prompts = format_grade_prompts(q_batch, preds)
+    return grade_with_string_matching(prompts)
+
+
 def parse_yes_no(text: str) -> bool:
     """Return True for yes, False for no or ambiguous responses."""
     if _yes_re.search(text) and not _no_re.search(text):

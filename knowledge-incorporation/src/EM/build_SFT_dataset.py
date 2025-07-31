@@ -3,7 +3,7 @@
 Convert knowledge-incorporation/results/query_server/run_*.json into an SFT JSONL
 
 Each row keeps exactly the prompt that was fed to vLLM (with
-<|im_start|> tags if instruct model) plus the top-k completions ranked by adapter_mean
+<|im_start|> tags if instruct model) plus the top-k completions ranked by composite_reward
 
 Output:  knowledge-incorporation/data/synthetic_data/EM_SFT/sft_best<k>of<k2>_<timestamp>.jsonl
 
@@ -18,12 +18,12 @@ from typing import Any, Dict, List
 
 # ------------------------- helper funcs ------------------------------
 def _top_k(comps: List[Dict[str, Any]], k: int) -> List[str]:
-    """return the text of the top-k completions by adapter_mean"""
+    """return the text of the top-k completions by composite_reward_mean"""
     return [
         c["text"].strip()
         for c in sorted(
             comps,
-            key=lambda c: c["stats"]["adapter_mean"],
+            key=lambda c: c["stats"].get("composite_reward_mean", c["stats"]["adapter_mean"]),
             reverse=True,
         )[:k]
         if c["text"].strip()

@@ -43,6 +43,12 @@ from transformers import (
     TrainingArguments,
 )
 import random, numpy as np, torch, time as _time
+import re
+from collections import Counter
+import nltk
+import textstat
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 from ..utils import (
     set_vllm_api_url,
     load_adapter,
@@ -53,6 +59,22 @@ from ..utils import (
    grade_with_local_llm,
 )
 
+# Download required NLTK data
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
+# Initialize sentence transformer model for semantic similarity
+sentence_model = None
+
+def get_sentence_model():
+    """Lazy load the sentence transformer model."""
+    global sentence_model
+    if sentence_model is None:
+        sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+    return sentence_model
+
 # ---------------------------  CONFIG & LOGGING  ----------------------- #
 logging.basicConfig(
     level=logging.INFO,
@@ -60,6 +82,115 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 LOG = logging.getLogger()
+
+
+def compute_length_bonus(text: str) -> float:
+    """Compute length bonus using textstat library."""
+    if not text.strip():
+        return -0.1
+    
+    # Get word count
+    word_count = textstat.word_count(text)
+    
+    # More restrictive length ranges
+    if word_count < 5:
+        return -0.1  # Too short
+    elif word_count < 10:
+        return -0.05  # Short
+    elif word_count < 30:
+        return 0.05   # Good length
+    elif word_count < 50:
+        return 0.0    # Acceptable
+    else:
+        return -0.1   # Too long (penalty for anything over 50 words)
+
+
+def compute_diversity_bonus(text: str, other_texts: List[str]) -> float:
+    """Compute diversity bonus using NLTK and sentence transformers."""
+    if not text.strip() or not other_texts:
+        return 0.0
+    
+    # Lexical diversity using NLTK
+    tokens = nltk.word_tokenize(text.lower())
+    if not tokens:
+        return 0.0
+    
+    # Type-token ratio
+    type_token_ratio = len(set(tokens)) / len(tokens)
+    
+    # Semantic diversity using sentence transformers
+    model = get_sentence_model()
+    text_embedding = model.encode(text)
+    
+    similarities = []
+    for other_text in other_texts:
+        if other_text.strip():
+            other_embedding = model.encode(other_text)
+            similarity = cosine_similarity([text_embedding], [other_embedding])[0][0]
+            similarities.append(similarity)
+    
+    # Diversity score: high type-token ratio + low semantic similarity
+    semantic_diversity = 1.0 - (np.mean(similarities) if similarities else 0.0)
+    diversity_score = (type_token_ratio + semantic_diversity) / 2.0
+    
+    return 0.05 * diversity_score  # Max 0.05 bonus
+
+
+def compute_quality_bonus(text: str, prompt: str) -> float:
+    """Compute quality bonus using textstat and NLTK."""
+    if not text.strip():
+        return -0.1
+    
+    quality_score = 0.0
+    
+    # Readability metrics using textstat
+    try:
+        flesch_ease = textstat.flesch_reading_ease(text)
+        if 60 <= flesch_ease <= 80:  # Good readability range
+            quality_score += 0.02
+        elif flesch_ease > 80:  # Very readable
+            quality_score += 0.01
+    except:
+        pass  # Skip if textstat fails
+    
+    # Sentence structure analysis
+    sentences = nltk.sent_tokenize(text)
+    if sentences:
+        # Check for varied sentence lengths
+        sentence_lengths = [len(nltk.word_tokenize(s)) for s in sentences]
+        avg_length = np.mean(sentence_lengths)
+        if 5 <= avg_length <= 20:
+            quality_score += 0.02
+        
+        # Check for sentence variety
+        if len(set(sentence_lengths)) > 1:
+            quality_score += 0.01
+    
+    # Repetition check
+    tokens = nltk.word_tokenize(text.lower())
+    if tokens:
+        word_counts = Counter(tokens)
+        repetition_ratio = sum(1 for count in word_counts.values() if count > 1) / len(word_counts)
+        if repetition_ratio < 0.3:
+            quality_score += 0.02
+    
+    return min(quality_score, 0.05)  # Max 0.05 bonus
+
+
+def compute_composite_reward(
+    adapter_mean: float,
+    text: str,
+    other_texts: List[str],
+    prompt: str
+) -> float:
+    """Compute composite reward by adding metric bonuses to adapter_mean."""
+    length_bonus = compute_length_bonus(text)
+    diversity_bonus = compute_diversity_bonus(text, other_texts)
+    quality_bonus = compute_quality_bonus(text, prompt)
+        
+    composite_reward = adapter_mean + length_bonus + diversity_bonus + quality_bonus
+    
+    return composite_reward
 
 
 def accuracy_and_texts(
@@ -295,6 +426,32 @@ def main():
                     for b, a in zip(base_ok, adapter_ok)
                 ]
 
+                # Compute additional metrics for adapter texts
+                adapter_metrics = []
+                for i, text in enumerate(adapter_texts):
+                    # Get other texts for diversity comparison
+                    other_texts = [t for j, t in enumerate(adapter_texts) if j != i]
+                    
+                    # Get prompt from train_sequences (use first sequence as proxy)
+                    prompt = train_sequences[0] if train_sequences else ""
+                    
+                    # Compute individual bonuses
+                    length_bonus = compute_length_bonus(text)
+                    diversity_bonus = compute_diversity_bonus(text, other_texts)
+                    quality_bonus = compute_quality_bonus(text, prompt)
+                    
+                    # Compute composite reward
+                    composite_reward = compute_composite_reward(
+                        adapter_acc, text, other_texts, prompt
+                    )
+                    
+                    adapter_metrics.append({
+                        "length_bonus": round(length_bonus, 4),
+                        "diversity_bonus": round(diversity_bonus, 4),
+                        "quality_bonus": round(quality_bonus, 4),
+                        "composite_reward": round(composite_reward, 4),
+                    })
+                
                 unload_adapter(adapter_name)
                 if not args.keep_adapter_dir:
                     shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -309,6 +466,7 @@ def main():
                     "baseline_correct": base_ok,
                     "adapter_correct": adapter_ok,
                     "gains": gains,
+                    "adapter_metrics": adapter_metrics,  # New field with all metrics
                 }
                 LOG.info(
                     "Step %d  base %.3f  adapter %.3f  Δ %.3f  (%.2fs)",
