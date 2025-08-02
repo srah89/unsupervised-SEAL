@@ -57,6 +57,7 @@ python3 -m knowledge-incorporation.src.data_generation.make_squad_data \
     --top_p "$TOP_P" \
     --prompt_key "$PROMPT_KEY" \
     --max_tokens "$MAX_TOKENS" \
+    --generate_questions \
     --qa_generations "$QA_GENERATIONS" \
     --max_questions_per_completion "$MAX_QUESTIONS_PER_COMPLETION"
 

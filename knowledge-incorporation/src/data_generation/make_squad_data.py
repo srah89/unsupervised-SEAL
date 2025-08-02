@@ -193,6 +193,27 @@ def parse_qa_pairs(qa_text: str) -> List[Dict[str, str]]:
             "answer": answer.strip()
         })
     
+    return questions, debug_info
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--model", required=True, help="Model name")
+    p.add_argument("--vllm_api_url", required=True, help="vLLM API URL")
+    p.add_argument("--dataset_in", required=True, help="Path to the input dataset")
+    p.add_argument("--dataset_out", required=True, help="Path to the output dataset")
+    p.add_argument("--n", type=int, default=-1, help="How many articles to process (-1 for all)")
+    p.add_argument("--start", type=int, default=0, help="Start index for processing")
+    p.add_argument("--k", type=int, default=5, help="Completions per article")
+    p.add_argument("--temperature", type=float, default=1.0, help="Temperature for generation")
+    p.add_argument("--top_p", type=float, default=0.95, help="Top-p for generation")
+    p.add_argument("--prompt_key", default="implications", help="Prompt template to use")
+    p.add_argument("--max_tokens", type=int, default=8192, help="Maximum tokens to generate")
+    p.add_argument("--generate_questions", action="store_true", default=True, help="Generate Q&A pairs")
+    p.add_argument("--qa_generations", type=int, default=1, help="Number of Q&A generations per passage")
+    p.add_argument("--max_questions_per_completion", type=int, default=5, help="Maximum questions to extract per completion")
+    p.add_argument("--instruct_model", action="store_true", help="Use instruction-tuned model format")
+    args = p.parse_args()
+
     # -------- load data + build ALL prompts in one go ----------------------- #
     raw: List[Dict[str, Any]] = json.load(open(args.dataset_in, encoding="utf-8"))
     random.seed(42)
