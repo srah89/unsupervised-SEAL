@@ -19,7 +19,8 @@ import numpy as np
 
 # Import TTT server reward functions
 import sys
-sys.path.append('knowledge-incorporation/src/inner')
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'inner'))
 from TTT_server import compute_length_bonus, compute_diversity_bonus, compute_quality_bonus, compute_composite_reward
 
 def parse_args():
@@ -117,8 +118,6 @@ def main() -> None:
         logging_steps=args.logging_steps,
         beta=args.beta,
         epsilon=args.epsilon,
-        scale_rewards=args.scale_rewards,
-        group_size=args.group_size,
         max_completion_length=512,
         log_completions=True,
         num_completions_to_print=5,
@@ -130,7 +129,6 @@ def main() -> None:
         args=grpo_config,
         train_dataset=dataset,
         reward_funcs=composite_reward_function,
-        tokenizer=tokenizer,
     )
 
     # Train with TRL's GRPO

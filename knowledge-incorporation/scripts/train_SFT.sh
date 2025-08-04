@@ -11,7 +11,7 @@ mkdir -p logs
 
 # -------- User-editable ---------------------------------------------- #
 MODEL_NAME="Qwen/Qwen2.5-7B"  # Base model name
-TRAIN_FILE="knowledge-incorporation/data/synthetic_data/EM_SFT/sft_best1of3_0706_214926.jsonl"  # Path to training data output by build_SFT_dataset.py
+TRAIN_FILE="knowledge-incorporation/data/synthetic_data/EM_SFT/sft_best1of3_0804_210343.jsonl"  # Path to training data output by build_SFT_dataset.py
 OUTPUT_DIR="models/grpo_iter1"
 mkdir -p "${OUTPUT_DIR}"
 

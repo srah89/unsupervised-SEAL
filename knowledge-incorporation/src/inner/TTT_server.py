@@ -49,7 +49,10 @@ import nltk
 import textstat
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from ..utils import (
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from utils import (
     set_vllm_api_url,
     load_adapter,
     unload_adapter,
@@ -89,8 +92,8 @@ def compute_length_bonus(text: str) -> float:
     if not text.strip():
         return -0.1
     
-    # Get word count
-    word_count = textstat.word_count(text)
+    # Get word count - use len() instead of textstat.word_count()
+    word_count = len(text.split())
     
     # More restrictive length ranges
     if word_count < 5:
@@ -126,11 +129,11 @@ def compute_diversity_bonus(text: str, other_texts: List[str]) -> float:
     for other_text in other_texts:
         if other_text.strip():
             other_embedding = model.encode(other_text)
-            similarity = cosine_similarity([text_embedding], [other_embedding])[0][0]
+            similarity = float(cosine_similarity([text_embedding], [other_embedding])[0][0])
             similarities.append(similarity)
     
     # Diversity score: high type-token ratio + low semantic similarity
-    semantic_diversity = 1.0 - (np.mean(similarities) if similarities else 0.0)
+    semantic_diversity = 1.0 - (float(np.mean(similarities)) if similarities else 0.0)
     diversity_score = (type_token_ratio + semantic_diversity) / 2.0
     
     return 0.05 * diversity_score  # Max 0.05 bonus
@@ -158,7 +161,7 @@ def compute_quality_bonus(text: str, prompt: str) -> float:
     if sentences:
         # Check for varied sentence lengths
         sentence_lengths = [len(nltk.word_tokenize(s)) for s in sentences]
-        avg_length = np.mean(sentence_lengths)
+        avg_length = float(np.mean(sentence_lengths))
         if 5 <= avg_length <= 20:
             quality_score += 0.02
         
@@ -446,10 +449,10 @@ def main():
                     )
                     
                     adapter_metrics.append({
-                        "length_bonus": round(length_bonus, 4),
-                        "diversity_bonus": round(diversity_bonus, 4),
-                        "quality_bonus": round(quality_bonus, 4),
-                        "composite_reward": round(composite_reward, 4),
+                        "length_bonus": float(round(length_bonus, 4)),
+                        "diversity_bonus": float(round(diversity_bonus, 4)),
+                        "quality_bonus": float(round(quality_bonus, 4)),
+                        "composite_reward": float(round(composite_reward, 4)),
                     })
                 
                 unload_adapter(adapter_name)
@@ -458,9 +461,9 @@ def main():
                 gc.collect();  torch.cuda.empty_cache()
 
                 reply = {
-                    "baseline_accuracy": round(base_acc, 4),
-                    "adapter_accuracy": round(adapter_acc, 4),
-                    "adapter_gain": round(adapter_acc - base_acc, 4),
+                    "baseline_accuracy": float(round(base_acc, 4)),
+                    "adapter_accuracy": float(round(adapter_acc, 4)),
+                    "adapter_gain": float(round(adapter_acc - base_acc, 4)),
                     "baseline_texts": base_texts,
                     "adapter_texts": adapter_texts,
                     "baseline_correct": base_ok,

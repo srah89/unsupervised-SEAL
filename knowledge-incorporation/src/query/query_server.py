@@ -69,7 +69,7 @@ def send_round_trip(
     questions: List[Dict[str, str]],
     args: argparse.Namespace,
     max_retries: int = 2,
-    timeout_ms: int = 600_000,           # 10 minutes
+    timeout_ms: int = 180_000,           # 3 minutes
 ) -> Dict[str, Any]:
     """
     Send one request to the TTT server and wait (≤10 min) for its reply.
