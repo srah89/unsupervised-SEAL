@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 import torch
 import zmq
+import wandb
 from datasets import Dataset as HFDataset
 from peft import LoraConfig, get_peft_model
 from transformers import (
@@ -330,6 +331,8 @@ def main():
                     LOG.info("Step %d  BASE-ONLY  acc %.3f  (%.2fs)",
                             step, base_acc, time.time()-recv_start)
                     step += 1
+                    # Add memory cleanup for eval mode
+                    gc.collect(); torch.cuda.empty_cache()
                     continue
 
                 # ---------- prepare LoRA fine-tune dataset -------------------------- #
@@ -479,6 +482,29 @@ def main():
                     adapter_acc - base_acc,
                     time.time() - recv_start,
                 )
+                
+                # Log to wandb if available
+                try:
+                    if wandb.run is not None:
+                        wandb.log({
+                            "step": step,
+                            "baseline_accuracy": base_acc,
+                            "adapter_accuracy": adapter_acc,
+                            "accuracy_gain": adapter_acc - base_acc,
+                            "training_time": time.time() - recv_start,
+                            "num_train_sequences": len(train_sequences),
+                            "num_eval_questions": len(questions),
+                            "lora_rank": lora_rank,
+                            "lora_alpha": lora_alpha,
+                            "finetune_epochs": finetune_epochs,
+                            "finetune_lr": finetune_lr,
+                            "mean_length_bonus": np.mean([m["length_bonus"] for m in adapter_metrics]),
+                            "mean_diversity_bonus": np.mean([m["diversity_bonus"] for m in adapter_metrics]),
+                            "mean_quality_bonus": np.mean([m["quality_bonus"] for m in adapter_metrics]),
+                            "mean_composite_reward": np.mean([m["composite_reward"] for m in adapter_metrics]),
+                        })
+                except Exception as e:
+                    LOG.warning(f"Failed to log to wandb: {e}")
             except Exception as e:
                 LOG.exception("Error processing request.")
                 reply = {"error": f"{type(e).__name__}: {e}"}

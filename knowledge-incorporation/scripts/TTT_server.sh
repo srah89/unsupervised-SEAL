@@ -77,20 +77,6 @@ echo "    Inner Loop Server started with PID ${ZMQ_PID}."
 echo "Ready to accept requests on port ${ZMQ_PORT}."
 
 trap "echo 'Shutting down...'; kill ${ZMQ_PID} ${VLLM_PID}" EXIT
-
-echo "TTT server is running. Press Ctrl+C to stop."
-# Keep the script running to maintain the background processes
-while true; do
-    sleep 10
-    # Check if processes are still running
-    if ! kill -0 ${ZMQ_PID} 2>/dev/null; then
-        echo "TTT server process died unexpectedly"
-        break
-    fi
-    if ! kill -0 ${VLLM_PID} 2>/dev/null; then
-        echo "vLLM server process died unexpectedly"
-        break
-    fi
-done
+wait
 
 echo "Job finished."

@@ -17,6 +17,11 @@ ZMQ_PORT=5555
 OUTPUT_DIR="knowledge-incorporation/results/query_server"
 mkdir -p "${OUTPUT_DIR}"
 
+# -------- Wandb Configuration ---------------------------------------- #
+WANDB_PROJECT="SEAL-knowledge-incorporation"
+WANDB_ENTITY=""  # Leave empty for default entity
+WANDB_TAGS=("SEAL" "knowledge-incorporation" "GRPO")
+
 # -------- Experiment Grid -------------------------------------------- #
 # Columns: exp_name dataset  k  evalT  r  α  drop  ep  lr  bs  ga  n_articles
 EXPERIMENTS=(
@@ -58,6 +63,10 @@ for EXP in "${EXPERIMENTS[@]}"; do
         --finetune_lr "${FINETUNE_LR}" \
         --batch_size "${BATCH_SIZE}" \
         --gradient_accumulation_steps "${GRAD_ACC}" \
+        --wandb_project "${WANDB_PROJECT}" \
+        --wandb_entity "${WANDB_ENTITY}" \
+        --wandb_run_name "${TAG}" \
+        --wandb_tags "${WANDB_TAGS[@]}" \
         ${SPLIT_NEWLINES:+--split_newlines} \
         >> "${LOG_FILE}" 2>&1
 done

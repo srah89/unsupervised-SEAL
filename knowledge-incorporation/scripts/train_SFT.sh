@@ -11,7 +11,7 @@ mkdir -p logs
 
 # -------- User-editable ---------------------------------------------- #
 MODEL_NAME="Qwen/Qwen2.5-7B"  # Base model name
-TRAIN_FILE="knowledge-incorporation/data/synthetic_data/EM_SFT/sft_best1of3_0804_210343.jsonl"  # Path to training data output by build_SFT_dataset.py
+TRAIN_FILE="knowledge-incorporation/data/synthetic_data/EM_SFT/sft_best1of5_0806_010450.jsonl"  # Path to training data output by build_SFT_dataset.py
 OUTPUT_DIR="models/grpo_iter1"
 mkdir -p "${OUTPUT_DIR}"
 
@@ -29,6 +29,11 @@ PREFERENCE_TEMPERATURE=0.1
 BETA=0.0
 EPSILON=0.2
 SCALE_REWARDS=true
+
+# -------- Wandb Configuration ---------------------------------------- #
+WANDB_PROJECT="yoruba-knowledge-incorporation"
+WANDB_ENTITY=""  # Leave empty for default entity
+WANDB_TAGS=("yoruba" "knowledge-incorporation" "sft-training")
 # --------------------------------------------------------------------- #
 
 # Kill vLLM temporarily to free GPU memory
@@ -36,11 +41,11 @@ echo "Stopping vLLM to free GPU memory for training..."
 pkill -f "vllm serve" || true
 sleep 3
 
-echo "Launching GRPO training on $(hostname)..."
+echo "Launching SFT training on $(hostname)..."
 accelerate launch \
     --num_processes 1 \
     --mixed_precision bf16 \
-    knowledge-incorporation/src/EM/train_PPO.py \
+    knowledge-incorporation/src/EM/train_SFT.py \
     --train_file "${TRAIN_FILE}" \
     --model_name_or_path "${MODEL_NAME}" \
     --output_dir "${OUTPUT_DIR}" \
@@ -53,10 +58,9 @@ accelerate launch \
     --lora_dropout ${LORA_DROPOUT} \
     --lora_target_modules ${LORA_TARGET_MODULES} \
     --logging_steps ${LOG_STEPS} \
-    --group_size ${GROUP_SIZE} \
-    --preference_temperature ${PREFERENCE_TEMPERATURE} \
-    --beta ${BETA} \
-    --epsilon ${EPSILON} \
-    --scale_rewards ${SCALE_REWARDS}
+    --wandb_project "${WANDB_PROJECT}" \
+    --wandb_entity "${WANDB_ENTITY}" \
+    --wandb_run_name "sft_$(basename "${TRAIN_FILE%.jsonl}")_$(date +%m%d_%H%M%S)" \
+    --wandb_tags "${WANDB_TAGS[@]}"
 
-echo "GRPO training completed."
+echo "SFT training completed."

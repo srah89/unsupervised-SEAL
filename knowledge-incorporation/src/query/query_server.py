@@ -1,4 +1,4 @@
-# src/query/query_server.py
+ # src/query/query_server.py
 """
 Query TTT server on SQuAD synthetic data. This drives the inner-loop TTT server:
 sample k synthetic completions per article, run `eval_times` fine-tune+eval 
@@ -30,6 +30,7 @@ import pathlib
 import statistics as _stats
 import sys
 import zmq
+import wandb
 from typing import Any, Dict, List
 
 from ..utils import (
@@ -59,6 +60,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--gradient_accumulation_steps", type=int, default=1)
     p.add_argument("--end_mask_substring", default="")
     p.add_argument("--split_newlines", action="store_true")
+    
+    # Wandb configuration
+    p.add_argument("--wandb_project", default="yoruba-knowledge-incorporation")
+    p.add_argument("--wandb_entity", default=None)
+    p.add_argument("--wandb_run_name", default=None)
+    p.add_argument("--wandb_tags", nargs="*", default=[])
+    p.add_argument("--disable_wandb", action="store_true", help="Disable wandb logging")
+    
     return p.parse_args()
 
 
@@ -209,6 +218,31 @@ def get_completions_from_item(item: Dict[str, Any], k_completions: int) -> List[
 def main() -> None:
     args = parse_args()
 
+    # Initialize wandb
+    if not args.disable_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_run_name or f"{args.exp_name}_{_dt.datetime.now().strftime('%m%d_%H%M%S')}",
+            tags=args.wandb_tags,
+            config={
+                "exp_name": args.exp_name,
+                "dataset": args.dataset,
+                "n_articles": args.n_articles,
+                "k_completions": args.k_completions,
+                "eval_times": args.eval_times,
+                "lora_rank": args.lora_rank,
+                "lora_alpha": args.lora_alpha,
+                "lora_dropout": args.lora_dropout,
+                "finetune_epochs": args.finetune_epochs,
+                "finetune_lr": args.finetune_lr,
+                "batch_size": args.batch_size,
+                "gradient_accumulation_steps": args.gradient_accumulation_steps,
+                "split_newlines": args.split_newlines,
+            }
+        )
+        print(f"Wandb initialized: {wandb.run.name}")
+
     data_path = pathlib.Path(args.dataset)
     try:
         dataset: List[Dict[str, Any]] = json.load(data_path.open(encoding="utf-8"))
@@ -274,6 +308,19 @@ def main() -> None:
               f"baseline {cur_base*100:.2f}% | "
               f"adapter {cur_adapt*100:.2f}% | "
               f"gain {cur_gain*100:+.2f}%")
+        
+        # Log to wandb
+        if not args.disable_wandb:
+            wandb.log({
+                "articles_processed": len(overall_base_means),
+                "baseline_accuracy": cur_base,
+                "adapter_accuracy": cur_adapt,
+                "accuracy_gain": cur_gain,
+                "article_baseline_accuracy": base_mean_article,
+                "article_adapter_accuracy": adpt_mean_article,
+                "article_adapter_std": adpt_std_article,
+                "article_gain": gain_mean_article,
+            }, step=art_idx)
 
         articles_out.append(
             {
@@ -337,6 +384,21 @@ def main() -> None:
     )
 
     print(f"\nWrote {dataset_type} results → {out_path}")
+
+    # Log final results to wandb
+    if not args.disable_wandb:
+        wandb.log({
+            "final_baseline_mean_accuracy": overall_base_mean,
+            "final_baseline_std": overall_base_std,
+            "final_adapter_mean_accuracy": overall_adpt_mean,
+            "final_adapter_std": overall_adpt_std,
+            "final_mean_gain": overall_adpt_mean - overall_base_mean,
+            "mean_adapter_std_over_completions": mean_adapter_std_accuracy,
+            "mean_adapter_std_within_completions": mean_adapter_std_within_completion,
+            "total_articles_processed": len(articles_out),
+            "results_file": str(out_path),
+        })
+        wandb.finish()
 
     # Optional: tell the server to shut down when finished
     # send_shutdown(ctx, endpoint)
