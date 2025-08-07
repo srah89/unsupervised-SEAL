@@ -306,3 +306,210 @@ def grade_with_local_llm(
         logging.warning(f"Local LLM grading failed: {e}")
         # If anything goes wrong, return all False
         return [False] * len(q_batch)
+
+
+# ---------------------------  REWARD MODEL FUNCTIONS  ---------------------------------- #
+
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+    import numpy as np
+    _REWARD_MODEL_AVAILABLE = True
+except ImportError:
+    _REWARD_MODEL_AVAILABLE = False
+    logging.warning("Reward model functionality not available - missing torch or transformers")
+
+
+class SEALRewardModel:
+    """Wrapper for trained reward model"""
+    
+    def __init__(self, model_path: str, device: str = None):
+        """
+        Initialize reward model from saved path
+        
+        Args:
+            model_path: Path to trained reward model
+            device: Device to load model on (auto-detect if None)
+        """
+        if not _REWARD_MODEL_AVAILABLE:
+            raise ImportError("Reward model functionality requires torch and transformers")
+            
+        self.model_path = model_path
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        
+        # Load model and tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        self.model.to(self.device)
+        self.model.eval()
+        
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+    
+    def score_response(self, input_text: str, response: str) -> float:
+        """
+        Score a response given input text
+        
+        Args:
+            input_text: The input context/question
+            response: The response to score
+            
+        Returns:
+            float: Reward score
+        """
+        # Format input for reward model
+        formatted_input = f"{input_text}\nAnswer: {response}"
+        
+        # Tokenize
+        inputs = self.tokenizer(
+            formatted_input,
+            return_tensors="pt",
+            truncation=True,
+            max_length=512,
+            padding=True
+        )
+        
+        # Move to device
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        # Get score
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            score = outputs.logits.item()
+        
+        return score
+    
+    def score_responses(self, input_texts: List[str], responses: List[str]) -> List[float]:
+        """
+        Score multiple responses
+        
+        Args:
+            input_texts: List of input contexts/questions
+            responses: List of responses to score
+            
+        Returns:
+            List[float]: Reward scores
+        """
+        scores = []
+        for input_text, response in zip(input_texts, responses):
+            score = self.score_response(input_text, response)
+            scores.append(score)
+        
+        return scores
+    
+    def compute_preference_reward(self, input_text: str, chosen: str, rejected: str) -> float:
+        """
+        Compute preference reward (difference between chosen and rejected scores)
+        
+        Args:
+            input_text: The input context/question
+            chosen: The preferred response
+            rejected: The less preferred response
+            
+        Returns:
+            float: Preference reward (positive if chosen > rejected)
+        """
+        chosen_score = self.score_response(input_text, chosen)
+        rejected_score = self.score_response(input_text, rejected)
+        
+        return chosen_score - rejected_score
+
+
+def load_reward_model(model_path: str) -> SEALRewardModel:
+    """
+    Convenience function to load a reward model
+    
+    Args:
+        model_path: Path to trained reward model
+        
+    Returns:
+        SEALRewardModel: Loaded reward model
+    """
+    return SEALRewardModel(model_path)
+
+
+def create_reward_function(reward_model_path: str) -> callable:
+    """
+    Create a reward function compatible with TRL's PPO/GRPO trainers
+    
+    Args:
+        reward_model_path: Path to trained reward model
+        
+    Returns:
+        callable: Reward function that takes (completions, **kwargs) and returns rewards
+    """
+    reward_model = load_reward_model(reward_model_path)
+    
+    def reward_function(completions: List[str], **kwargs) -> List[float]:
+        """
+        Reward function for TRL trainers
+        
+        Args:
+            completions: List of generated completions
+            **kwargs: Additional arguments (should include 'prompt' or 'input_text')
+            
+        Returns:
+            List[float]: Reward scores for each completion
+        """
+        # Get input text from kwargs
+        input_text = kwargs.get('prompt', kwargs.get('input_text', ''))
+        
+        if not input_text:
+            # Fallback: use a default input text
+            input_text = "Question: Please provide a response."
+        
+        # Score each completion
+        rewards = []
+        for completion in completions:
+            score = reward_model.score_response(input_text, completion)
+            rewards.append(score)
+        
+        return rewards
+    
+    return reward_function
+
+
+def evaluate_reward_model(reward_model_path: str, test_data: List[Dict]) -> Dict[str, float]:
+    """
+    Evaluate a trained reward model on test data
+    
+    Args:
+        reward_model_path: Path to trained reward model
+        test_data: List of test examples with 'input_text', 'chosen', 'rejected' keys
+        
+    Returns:
+        Dict[str, float]: Evaluation metrics
+    """
+    reward_model = load_reward_model(reward_model_path)
+    
+    correct_preferences = 0
+    total_preferences = 0
+    preference_scores = []
+    
+    for example in test_data:
+        input_text = example['input_text']
+        chosen = example['chosen']
+        rejected = example['rejected']
+        
+        # Get scores
+        chosen_score = reward_model.score_response(input_text, chosen)
+        rejected_score = reward_model.score_response(input_text, rejected)
+        
+        # Check if preference is correct
+        if chosen_score > rejected_score:
+            correct_preferences += 1
+        
+        total_preferences += 1
+        preference_scores.append(chosen_score - rejected_score)
+    
+    # Calculate metrics
+    accuracy = correct_preferences / total_preferences if total_preferences > 0 else 0.0
+    mean_preference_score = np.mean(preference_scores) if preference_scores else 0.0
+    std_preference_score = np.std(preference_scores) if preference_scores else 0.0
+    
+    return {
+        'accuracy': accuracy,
+        'mean_preference_score': mean_preference_score,
+        'std_preference_score': std_preference_score,
+        'total_preferences': total_preferences
+    }

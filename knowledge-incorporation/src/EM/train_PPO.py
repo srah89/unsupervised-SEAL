@@ -2,7 +2,7 @@
 """
 GRPO (Group Relative Policy Optimization) trainer using TRL's GRPOTrainer
 
-Uses TRL's built-in GRPO implementation with composite rewards from TTT server.
+Uses TRL's built-in GRPO implementation with trained reward model (default) or composite rewards from TTT server.
 """
 import os
 import argparse
@@ -23,6 +23,10 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'inner'))
 from TTT_server import compute_length_bonus, compute_diversity_bonus, compute_quality_bonus, compute_composite_reward
 
+# Import reward model utilities from utils
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from utils import create_reward_function
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--train_file", required=True)
@@ -42,6 +46,13 @@ def parse_args():
     p.add_argument("--beta", type=float, default=0.0, help="KL coefficient")
     p.add_argument("--epsilon", type=float, default=0.2, help="Epsilon for clipping")
     p.add_argument("--scale_rewards", type=bool, default=True, help="Scale rewards by std")
+    
+    # Reward model options (now default)
+    p.add_argument("--reward_model_path", type=str, default="knowledge-incorporation/models/reward_model", 
+                   help="Path to trained reward model (default: knowledge-incorporation/models/reward_model)")
+    p.add_argument("--use_composite_rewards", action="store_true", 
+                   help="Use composite rewards from TTT server instead of reward model")
+    
     return p.parse_args()
 
 def composite_reward_function(completions, **kwargs):
@@ -108,6 +119,23 @@ def main() -> None:
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         torch.cuda.set_device(local_rank)
 
+    # Choose reward function (reward model is now default)
+    if args.use_composite_rewards:
+        print("Using composite reward function from TTT server")
+        reward_function = composite_reward_function
+    else:
+        # Check if reward model exists
+        reward_model_path = Path(args.reward_model_path)
+        if not reward_model_path.exists():
+            print(f"Warning: Reward model not found at {args.reward_model_path}")
+            print("Falling back to composite rewards. To use reward model, first train it with:")
+            print("bash knowledge-incorporation/scripts/train_reward_model.sh")
+            print("Using composite reward function from TTT server")
+            reward_function = composite_reward_function
+        else:
+            print(f"Using trained reward model from: {args.reward_model_path}")
+            reward_function = create_reward_function(args.reward_model_path)
+
     # GRPO configuration using TRL
     grpo_config = GRPOConfig(
         output_dir=args.output_dir,
@@ -128,7 +156,7 @@ def main() -> None:
         model=model,
         args=grpo_config,
         train_dataset=dataset,
-        reward_funcs=composite_reward_function,
+        reward_funcs=reward_function,
     )
 
     # Train with TRL's GRPO
@@ -144,9 +172,6 @@ def main() -> None:
     
     if dist.is_initialized():
         dist.destroy_process_group()
-
-    print(f"GRPO training completed. Model saved to {output_path}")
-
 
 if __name__ == "__main__":
     main() 
