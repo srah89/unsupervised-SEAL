@@ -7,7 +7,7 @@ This is an implementation of SEAL for the *knowledge incorporation* setting, whe
 The python files in src/ have documentation on function. Here is some information on how to run the pipelines used in the paper's experiments.
 
 ### 0. Setup
-Run 'pip install -r requirements.txt' and 'python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"' to set up.
+Run `pip install -r requirements.txt` and `python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"` to set up.
 
 ### 1. Create Data
 Use `make_squad_data.sh` (or `make_squad_data_openai.sh`) to create the synthetic data used in subsequent RL training or evaluation.
