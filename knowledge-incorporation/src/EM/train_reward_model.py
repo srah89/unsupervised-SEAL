@@ -12,6 +12,7 @@ import json
 import torch
 import random
 import argparse
+import logging
 from pathlib import Path
 from typing import List, Dict, Any
 from datasets import Dataset
@@ -32,6 +33,11 @@ class SEALPreferenceGenerator:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForCausalLM.from_pretrained(model_name)
         
+        # Move model to GPU if available
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = self.model.to(self.device)
+        logging.info(f"Generation model loaded on device: {self.device}")
+        
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
     
@@ -39,6 +45,9 @@ class SEALPreferenceGenerator:
         """Generate answer without context (likely hallucinated)"""
         prompt = f"Question: {question}\nAnswer:"
         inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256)
+        
+        # Move inputs to the same device as the model
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
         
         with torch.no_grad():
             outputs = self.model.generate(
@@ -64,6 +73,9 @@ class SEALPreferenceGenerator:
         
         prompt = f"{random.choice(generic_prompts)}\n{question}"
         inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=256)
+        
+        # Move inputs to the same device as the model
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
         
         with torch.no_grad():
             outputs = self.model.generate(
@@ -186,12 +198,12 @@ def load_synthetic_data(data_dir: str) -> List[Dict]:
     if not synthetic_files:
         raise FileNotFoundError(f"No synthetic data files found in {data_dir}")
     
-    print(f"Found {len(synthetic_files)} synthetic data files")
+    logging.info(f"Found {len(synthetic_files)} synthetic data files")
     
     # Load all data
     all_data = []
     for file_path in synthetic_files:
-        print(f"Loading {file_path}...")
+        logging.info(f"Loading {file_path}...")
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -200,9 +212,9 @@ def load_synthetic_data(data_dir: str) -> List[Dict]:
                 else:
                     all_data.append(data)
         except Exception as e:
-            print(f"Warning: Could not load {file_path}: {e}")
+            logging.warning(f"Could not load {file_path}: {e}")
     
-    print(f"Loaded {len(all_data)} total items")
+    logging.info(f"Loaded {len(all_data)} total items")
     return all_data
 
 def main():
@@ -230,21 +242,38 @@ def main():
     
     args = parser.parse_args()
     
+    # Set up logging
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_dir / f"reward_model_training_{args.seed}.log"),
+            logging.StreamHandler()  # Also log to console
+        ]
+    )
+    logger = logging.getLogger(__name__)
+    
+    logger.info("Starting reward model training")
+    logger.info(f"Arguments: {vars(args)}")
+    
     # Set random seed
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     
     # Load synthetic data
-    print("Loading synthetic data...")
+    logger.info("Loading synthetic data...")
     synthetic_data = load_synthetic_data(args.data_dir)
     
     if not synthetic_data:
-        print("No synthetic data found. Exiting.")
+        logger.error("No synthetic data found. Exiting.")
         return
     
     # Generate preference pairs
-    print("Generating preference pairs...")
+    logger.info("Generating preference pairs...")
     generator = SEALPreferenceGenerator(args.generation_model_name)
     preference_data = generator.generate_preference_pairs(synthetic_data)
     
@@ -252,7 +281,7 @@ def main():
     if len(preference_data) > args.num_samples:
         preference_data = random.sample(preference_data, args.num_samples)
     
-    print(f"Generated {len(preference_data)} preference pairs")
+    logger.info(f"Generated {len(preference_data)} preference pairs")
     
     # Convert to TRL format
     dataset = Dataset.from_list(preference_data)
@@ -262,11 +291,11 @@ def main():
     train_dataset = split_dataset['train']
     eval_dataset = split_dataset['test']
     
-    print(f"Training samples: {len(train_dataset)}")
-    print(f"Evaluation samples: {len(eval_dataset)}")
+    logger.info(f"Training samples: {len(train_dataset)}")
+    logger.info(f"Evaluation samples: {len(eval_dataset)}")
     
     # Initialize reward model
-    print(f"Loading reward model: {args.reward_model_name}")
+    logger.info(f"Loading reward model: {args.reward_model_name}")
     try:
         # Try loading as sequence classification first
         reward_model = AutoModelForSequenceClassification.from_pretrained(
@@ -274,9 +303,9 @@ def main():
             num_labels=1
         )
     except Exception as e:
-        print(f"Could not load as sequence classification model: {e}")
-        print(f"Loading {args.reward_model_name} as causal LM and adding classification head...")
-        # For generative models like Qwen, load as causal LM and add classification head
+        logger.warning(f"Could not load as sequence classification model: {e}")
+        logger.info(f"Loading {args.reward_model_name} as causal LM and adding classification head...")
+        # For generative models like Qwen, load as causal LM and adding classification head
         from transformers import AutoConfig
         
         config = AutoConfig.from_pretrained(args.reward_model_name)
@@ -288,6 +317,12 @@ def main():
             config=config,
             ignore_mismatched_sizes=True
         )
+    
+    # Move reward model to GPU if available
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    reward_model = reward_model.to(device)
+    logger.info(f"Reward model loaded on device: {device}")
+    
     reward_tokenizer = AutoTokenizer.from_pretrained(args.reward_model_name)
     
     if reward_tokenizer.pad_token is None:
@@ -312,6 +347,7 @@ def main():
         greater_is_better=False,
         report_to=None,
         remove_unused_columns=False,
+        dataloader_pin_memory=False,  # Disable pin_memory for better GPU compatibility
     )
     
     # Initialize TRL RewardTrainer
@@ -325,7 +361,7 @@ def main():
     )
     
     # Train the model
-    print("Starting training...")
+    logger.info("Starting training...")
     trainer.train()
     
     # Save the model
@@ -334,7 +370,7 @@ def main():
     trainer.save_model(str(output_path))
     reward_tokenizer.save_pretrained(str(output_path))
     
-    print(f"Training complete! Model saved to {output_path}")
+    logger.info(f"Training complete! Model saved to {output_path}")
 
 if __name__ == "__main__":
     main() 
