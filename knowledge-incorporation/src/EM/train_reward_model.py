@@ -353,11 +353,9 @@ def main():
     # Initialize TRL RewardTrainer
     trainer = RewardTrainer(
         model=reward_model,
-        tokenizer=reward_tokenizer,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        max_length=args.max_length,
     )
     
     # Train the model
