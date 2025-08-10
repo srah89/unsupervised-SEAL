@@ -18,6 +18,7 @@ from datasets import Dataset
 from transformers import (
     AutoTokenizer, 
     AutoModelForSequenceClassification,
+    AutoModelForCausalLM,
     TrainingArguments
 )
 from trl import RewardTrainer
@@ -29,7 +30,7 @@ class SEALPreferenceGenerator:
     def __init__(self, model_name: str = "microsoft/DialoGPT-medium"):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(model_name)
         
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -266,10 +267,27 @@ def main():
     
     # Initialize reward model
     print(f"Loading reward model: {args.reward_model_name}")
-    reward_model = AutoModelForSequenceClassification.from_pretrained(
-        args.reward_model_name,
-        num_labels=1
-    )
+    try:
+        # Try loading as sequence classification first
+        reward_model = AutoModelForSequenceClassification.from_pretrained(
+            args.reward_model_name,
+            num_labels=1
+        )
+    except Exception as e:
+        print(f"Could not load as sequence classification model: {e}")
+        print(f"Loading {args.reward_model_name} as causal LM and adding classification head...")
+        # For generative models like Qwen, load as causal LM and add classification head
+        from transformers import AutoConfig
+        
+        config = AutoConfig.from_pretrained(args.reward_model_name)
+        config.num_labels = 1
+        
+        # Load as sequence classification with the causal LM config
+        reward_model = AutoModelForSequenceClassification.from_pretrained(
+            args.reward_model_name,
+            config=config,
+            ignore_mismatched_sizes=True
+        )
     reward_tokenizer = AutoTokenizer.from_pretrained(args.reward_model_name)
     
     if reward_tokenizer.pad_token is None:
