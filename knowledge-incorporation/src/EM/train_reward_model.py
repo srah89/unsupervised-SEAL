@@ -28,7 +28,6 @@ from transformers import (
 )
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import numpy as np
-import evaluate
 
 class CustomRewardModel(nn.Module):
     """Custom reward model with Qwen 2.5-1.5B backbone"""
@@ -395,17 +394,28 @@ def main():
     
     args = parser.parse_args()
     
-    # Set up logging
+     # Set up logging
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
+    
+    # Create log filename with timestamp for uniqueness
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"reward_model_training_{timestamp}_seed{args.seed}.log"
+    log_path = log_dir / log_filename
+    
+    # Clear any existing handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
     
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_dir / f"reward_model_training_{args.seed}.log"),
+            logging.FileHandler(str(log_path)),  # Convert Path to string
             logging.StreamHandler()
-        ]
+        ],
+        force=True  # Override any existing configuration
     )
     logger = logging.getLogger(__name__)
     

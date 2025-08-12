@@ -26,9 +26,9 @@ MAX_LENGTH=512
 SEED=42
 
 # -------- Wandb Configuration ---------------------------------------- #
-WANDB_PROJECT="yoruba-knowledge-incorporation"
+WANDB_PROJECT="SEAL-knowledge-incorporation"
 WANDB_ENTITY=""  # Leave empty for default entity
-WANDB_TAGS=("yoruba" "knowledge-incorporation" "reward-model-training" "qwen" "custom-architecture")
+WANDB_TAGS=("SEAL" "knowledge-incorporation" "reward-model-training" "qwen" "custom-architecture")
 
 # -------- GPU Memory Management -------------------------------------- #
 # Kill vLLM temporarily to free GPU memory
