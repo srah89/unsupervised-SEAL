@@ -255,6 +255,24 @@ class RewardModelTrainer(Trainer):
         super().__init__(**kwargs)
         self.tokenizer = tokenizer
         self.max_length = max_length
+        
+        # Define the expected columns for the trainer
+        self._signature_columns = ["chosen", "rejected"]
+    
+    def get_train_dataloader(self):
+        """Override to ensure proper data formatting"""
+        return super().get_train_dataloader()
+    
+    def get_eval_dataloader(self):
+        """Override to ensure proper data formatting"""
+        return super().get_eval_dataloader()
+    
+    def data_collator(self, features):
+        """Custom data collator for preference pairs"""
+        batch = {}
+        batch["chosen"] = [f["chosen"] for f in features]
+        batch["rejected"] = [f["rejected"] for f in features]
+        return batch
     
     def tokenize_preference_pair(self, chosen_text: str, rejected_text: str):
         """Tokenize chosen and rejected responses"""
