@@ -259,40 +259,12 @@ class RewardModelTrainer(Trainer):
         # Define the expected columns for the trainer
         self._signature_columns = ["chosen", "rejected"]
     
-    def get_train_dataloader(self):
-        """Override to ensure proper data formatting"""
-        return super().get_train_dataloader()
-    
-    def get_eval_dataloader(self):
-        """Override to ensure proper data formatting"""
-        return super().get_eval_dataloader()
-    
     def data_collator(self, features):
         """Custom data collator for preference pairs"""
         batch = {}
         batch["chosen"] = [f["chosen"] for f in features]
         batch["rejected"] = [f["rejected"] for f in features]
         return batch
-    
-    def tokenize_preference_pair(self, chosen_text: str, rejected_text: str):
-        """Tokenize chosen and rejected responses"""
-        chosen_tokens = self.tokenizer(
-            chosen_text,
-            truncation=True,
-            padding="max_length",
-            max_length=self.max_length,
-            return_tensors="pt"
-        )
-        
-        rejected_tokens = self.tokenizer(
-            rejected_text,
-            truncation=True, 
-            padding="max_length",
-            max_length=self.max_length,
-            return_tensors="pt"
-        )
-        
-        return chosen_tokens, rejected_tokens
     
     def compute_loss(self, model, inputs, return_outputs=False):
         """Compute Bradley-Terry pairwise ranking loss"""
@@ -304,8 +276,20 @@ class RewardModelTrainer(Trainer):
         rejected_rewards = []
         
         for i in range(len(chosen_text)):
-            chosen_tokens, rejected_tokens = self.tokenize_preference_pair(
-                chosen_text[i], rejected_text[i]
+            chosen_tokens = self.tokenizer(
+                chosen_text[i],
+                truncation=True,
+                padding="max_length",
+                max_length=self.max_length,
+                return_tensors="pt"
+            )
+            
+            rejected_tokens = self.tokenizer(
+                rejected_text[i],
+                truncation=True, 
+                padding="max_length",
+                max_length=self.max_length,
+                return_tensors="pt"
             )
             
             # Move to device
