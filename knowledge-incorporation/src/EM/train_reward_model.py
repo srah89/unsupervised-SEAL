@@ -164,8 +164,15 @@ class SEALPreferenceGenerator:
     def generate_preference_pairs(self, synthetic_data: List[Dict]) -> List[Dict]:
         """Generate preference pairs from synthetic data"""
         preference_data = []
+        total_items = len(synthetic_data)
+        total_questions = sum(len(item.get('questions', [])) for item in synthetic_data)
         
-        for item in synthetic_data:
+        logging.info(f"Starting preference pair generation for {total_items} items with {total_questions} total questions")
+        
+        processed_items = 0
+        processed_questions = 0
+        
+        for item_idx, item in enumerate(synthetic_data):
             title = item.get('title', '')
             context = item.get('context', '')
             questions = item.get('questions', [])
@@ -173,12 +180,20 @@ class SEALPreferenceGenerator:
             if not questions:
                 continue
             
-            for qa in questions:
+            # Log progress every 10 items or when starting a new item
+            if item_idx % 10 == 0 or item_idx == 0:
+                logging.info(f"Processing item {item_idx + 1}/{total_items}: '{title[:50]}...'")
+            
+            for q_idx, qa in enumerate(questions):
                 question = qa.get('question', '')
                 correct_answer = qa.get('answer', '')
                 
                 if not question or not correct_answer:
                     continue
+                
+                # Log progress every 50 questions
+                if processed_questions % 50 == 0:
+                    logging.info(f"  Generated {len(preference_data)} preference pairs so far...")
                 
                 # Create the input text for reward model
                 input_text = f"Topic: {title}\nContext: {context}\nQuestion: {question}\nAnswer: "
@@ -188,9 +203,13 @@ class SEALPreferenceGenerator:
                 
                 # 1. Out-of-context answer
                 try:
+                    logging.debug(f"    Generating out-of-context answer for question {q_idx + 1}")
                     out_context_answer = self.generate_out_of_context_answer(question)
                     if self.is_valid_negative_answer(out_context_answer, correct_answer):
                         negative_candidates.append(out_context_answer)
+                        logging.debug(f"    ✓ Generated valid out-of-context answer: {out_context_answer[:50]}...")
+                    else:
+                        logging.debug(f"    ✗ Out-of-context answer filtered out")
                 except Exception as e:
                     logging.warning(f"Failed to generate out-of-context answer: {e}")
                 
@@ -198,11 +217,13 @@ class SEALPreferenceGenerator:
                 incomplete_answer = self.create_incomplete_answer(correct_answer)
                 if self.is_valid_negative_answer(incomplete_answer, correct_answer):
                     negative_candidates.append(incomplete_answer)
+                    logging.debug(f"    ✓ Generated valid incomplete answer: {incomplete_answer[:50]}...")
                 
                 # 3. Wrong answer from context
                 wrong_answer = self.create_wrong_answer(context, question)
                 if self.is_valid_negative_answer(wrong_answer, correct_answer):
                     negative_candidates.append(wrong_answer)
+                    logging.debug(f"    ✓ Generated valid wrong answer: {wrong_answer[:50]}...")
                 
                 # Create preference pairs
                 for negative_answer in negative_candidates:
@@ -211,8 +232,20 @@ class SEALPreferenceGenerator:
                         "chosen": correct_answer,
                         "rejected": negative_answer
                     })
+                
+                processed_questions += 1
+                
+                # Log detailed progress every 100 questions
+                if processed_questions % 100 == 0:
+                    logging.info(f"  Processed {processed_questions}/{total_questions} questions, generated {len(preference_data)} preference pairs")
+            
+            processed_items += 1
+            
+            # Log item completion
+            if processed_items % 5 == 0 or processed_items == total_items:
+                logging.info(f"Completed {processed_items}/{total_items} items, total preference pairs: {len(preference_data)}")
         
-        logging.info(f"Generated {len(preference_data)} preference pairs")
+        logging.info(f"Preference pair generation complete! Generated {len(preference_data)} pairs from {processed_items} items and {processed_questions} questions")
         return preference_data
 
 class RewardModelTrainer(Trainer):
@@ -354,19 +387,23 @@ def load_synthetic_data(data_dir: str) -> List[Dict]:
     
     # Load all data
     all_data = []
-    for file_path in synthetic_files:
-        logging.info(f"Loading {file_path}...")
+    total_files = len(synthetic_files)
+    
+    for file_idx, file_path in enumerate(synthetic_files):
+        logging.info(f"Loading file {file_idx + 1}/{total_files}: {file_path.name}")
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 if isinstance(data, list):
                     all_data.extend(data)
+                    logging.info(f"  ✓ Loaded {len(data)} items from {file_path.name}")
                 else:
                     all_data.append(data)
+                    logging.info(f"  ✓ Loaded 1 item from {file_path.name}")
         except Exception as e:
-            logging.warning(f"Could not load {file_path}: {e}")
+            logging.warning(f"  ✗ Could not load {file_path}: {e}")
     
-    logging.info(f"Loaded {len(all_data)} total items")
+    logging.info(f"Data loading complete! Total items loaded: {len(all_data)} from {total_files} files")
     return all_data
 
 def main():
@@ -437,14 +474,19 @@ def main():
     
     # Generate preference pairs
     logger.info("Generating preference pairs...")
+    logger.info(f"Target: {args.num_samples} preference pairs")
+    
     generator = SEALPreferenceGenerator(args.generation_model_name)
     preference_data = generator.generate_preference_pairs(synthetic_data)
     
     # Limit to requested number of samples
     if len(preference_data) > args.num_samples:
+        logger.info(f"Generated {len(preference_data)} pairs, limiting to {args.num_samples} as requested")
         preference_data = random.sample(preference_data, args.num_samples)
+    else:
+        logger.info(f"Generated {len(preference_data)} pairs (less than requested {args.num_samples})")
     
-    logger.info(f"Using {len(preference_data)} preference pairs")
+    logger.info(f"Final dataset: {len(preference_data)} preference pairs")
     
     # Convert to proper format
     formatted_data = []
@@ -507,12 +549,16 @@ def main():
     
     # Train the model
     logger.info("Starting training...")
+    logger.info(f"Training for {args.num_epochs} epochs with batch size {args.batch_size}")
+    logger.info(f"Learning rate: {args.learning_rate}")
+    logger.info(f"Gradient accumulation steps: 4")
+    
     trainer.train()
     
     # Final evaluation
     logger.info("Running final evaluation...")
     final_metrics = trainer.evaluate()
-    logger.info(f"Final metrics: {final_metrics}")
+    logger.info(f"Final evaluation metrics: {final_metrics}")
     
     # Save the model
     output_path = Path(args.output_dir)
