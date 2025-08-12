@@ -161,18 +161,25 @@ class SEALPreferenceGenerator:
         # Fallback: return a generic wrong answer
         return "This information is not clearly stated in the provided context."
     
-    def generate_preference_pairs(self, synthetic_data: List[Dict]) -> List[Dict]:
-        """Generate preference pairs from synthetic data"""
+    def generate_preference_pairs(self, synthetic_data: List[Dict], target_pairs: int = None) -> List[Dict]:
+        """Generate preference pairs from synthetic data, stopping at target if specified"""
         preference_data = []
         total_items = len(synthetic_data)
         total_questions = sum(len(item.get('questions', [])) for item in synthetic_data)
         
         logging.info(f"Starting preference pair generation for {total_items} items with {total_questions} total questions")
+        if target_pairs:
+            logging.info(f"Target: {target_pairs} preference pairs")
         
         processed_items = 0
         processed_questions = 0
         
         for item_idx, item in enumerate(synthetic_data):
+            # Check if we've reached our target
+            if target_pairs and len(preference_data) >= target_pairs:
+                logging.info(f"Reached target of {target_pairs} preference pairs, stopping generation")
+                break
+                
             title = item.get('title', '')
             context = item.get('context', '')
             questions = item.get('questions', [])
@@ -185,6 +192,10 @@ class SEALPreferenceGenerator:
                 logging.info(f"Processing item {item_idx + 1}/{total_items}: '{title[:50]}...'")
             
             for q_idx, qa in enumerate(questions):
+                # Check if we've reached our target
+                if target_pairs and len(preference_data) >= target_pairs:
+                    break
+                    
                 question = qa.get('question', '')
                 correct_answer = qa.get('answer', '')
                 
@@ -232,6 +243,10 @@ class SEALPreferenceGenerator:
                         "chosen": correct_answer,
                         "rejected": negative_answer
                     })
+                    
+                    # Check if we've reached our target
+                    if target_pairs and len(preference_data) >= target_pairs:
+                        break
                 
                 processed_questions += 1
                 
@@ -517,14 +532,7 @@ def main():
     logger.info(f"Target: {args.num_samples} preference pairs")
     
     generator = SEALPreferenceGenerator(args.generation_model_name)
-    preference_data = generator.generate_preference_pairs(synthetic_data)
-    
-    # Limit to requested number of samples
-    if len(preference_data) > args.num_samples:
-        logger.info(f"Generated {len(preference_data)} pairs, limiting to {args.num_samples} as requested")
-        preference_data = random.sample(preference_data, args.num_samples)
-    else:
-        logger.info(f"Generated {len(preference_data)} pairs (less than requested {args.num_samples})")
+    preference_data = generator.generate_preference_pairs(synthetic_data, target_pairs=args.num_samples)
     
     logger.info(f"Final dataset: {len(preference_data)} preference pairs")
     
