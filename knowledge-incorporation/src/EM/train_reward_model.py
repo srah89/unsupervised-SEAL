@@ -261,10 +261,48 @@ class RewardModelTrainer(Trainer):
     
     def data_collator(self, features):
         """Custom data collator for preference pairs"""
+        if not features:
+            return {}
+        
         batch = {}
         batch["chosen"] = [f["chosen"] for f in features]
         batch["rejected"] = [f["rejected"] for f in features]
+        
+        # Debug logging
+        logging.debug(f"Data collator: {len(features)} features")
+        logging.debug(f"Sample feature keys: {list(features[0].keys()) if features else 'None'}")
+        
         return batch
+    
+    def get_train_dataloader(self):
+        """Override to use custom data collator"""
+        from torch.utils.data import DataLoader
+        
+        train_sampler = self._get_train_sampler()
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.args.per_device_train_batch_size,
+            sampler=train_sampler,
+            collate_fn=self.data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
+    
+    def get_eval_dataloader(self):
+        """Override to use custom data collator"""
+        from torch.utils.data import DataLoader
+        
+        eval_dataset = self.eval_dataset
+        return DataLoader(
+            eval_dataset,
+            sampler=self._get_eval_sampler(eval_dataset),
+            batch_size=self.args.per_device_eval_batch_size,
+            collate_fn=self.data_collator,
+            drop_last=False,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
     
     def compute_loss(self, model, inputs, return_outputs=False):
         """Compute Bradley-Terry pairwise ranking loss"""
@@ -507,6 +545,11 @@ def main():
     
     logger.info(f"Training samples: {len(train_dataset)}")
     logger.info(f"Evaluation samples: {len(eval_dataset)}")
+    
+    # Debug: Check data format
+    logger.info(f"Sample training data keys: {list(train_dataset[0].keys())}")
+    logger.info(f"Sample training data chosen: {train_dataset[0]['chosen'][:100]}...")
+    logger.info(f"Sample training data rejected: {train_dataset[0]['rejected'][:100]}...")
     
     # Initialize reward model
     logger.info(f"Loading reward model: {args.reward_model_name}")
