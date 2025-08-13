@@ -26,7 +26,7 @@ from transformers import (
     TrainingArguments,
     AutoConfig
 )
-from trl import RewardTrainer, RewardConfig
+from trl import RewardTrainer
 import numpy as np
 
 class CustomRewardModel(nn.Module):
@@ -293,8 +293,8 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
-    # Training arguments with required TRL parameters
-    training_args = RewardConfig(
+    # Training arguments (TRL 0.20.0 uses standard TrainingArguments)
+    training_args = TrainingArguments(
         output_dir=args.output_dir,
         learning_rate=args.learning_rate,
         per_device_train_batch_size=args.batch_size,
@@ -313,16 +313,17 @@ def main():
         remove_unused_columns=False,
         report_to=None,
         fp16=True,
-        max_length=args.max_length,  # TRL-specific parameter
-        disable_dropout=True,  # Required by TRL
+        dataloader_pin_memory=False,
     )
     
-    # Initialize TRL RewardTrainer with minimal parameters
+    # Initialize TRL RewardTrainer (TRL 0.20.0 format)
     trainer = RewardTrainer(
         model=reward_model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        tokenizer=tokenizer,  # TRL 0.20.0 uses 'tokenizer' parameter
+        max_length=args.max_length,
     )
     
     # Train
