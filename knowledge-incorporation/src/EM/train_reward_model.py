@@ -262,12 +262,22 @@ def main():
     # Initialize model and tokenizer (using AutoModelForSequenceClassification for TRL compatibility)
     logger.info(f"Loading reward model: {args.reward_model_name}")
     try:
-        reward_model = AutoModelForSequenceClassification.from_pretrained(
-            args.reward_model_name,
-            num_labels=1,  # Single scalar output for reward
-            torch_dtype=torch.float16,
-            device_map="auto"
-        )
+        # Use full precision for BERT models to avoid FP16 gradient issues
+        if args.reward_model_name.startswith("bert"):
+            reward_model = AutoModelForSequenceClassification.from_pretrained(
+                args.reward_model_name,
+                num_labels=1,  # Single scalar output for reward
+                torch_dtype=torch.float32,  # Use full precision for BERT
+                device_map="auto"
+            )
+        else:
+            reward_model = AutoModelForSequenceClassification.from_pretrained(
+                args.reward_model_name,
+                num_labels=1,  # Single scalar output for reward
+                torch_dtype=torch.float16,
+                device_map="auto"
+            )
+            
         tokenizer = AutoTokenizer.from_pretrained(args.reward_model_name)
         
         # Ensure BERT tokenizer has proper special tokens
@@ -321,7 +331,7 @@ def main():
         greater_is_better=False,
         remove_unused_columns=False,
         report_to=None,
-        fp16=True,
+        fp16=False if args.reward_model_name.startswith("bert") else True,  # Disable FP16 for BERT to avoid gradient issues
         dataloader_pin_memory=False,
         max_length=args.max_length,  # Required by TRL RewardTrainer
         disable_dropout=True,  # Required by TRL 0.20.0
