@@ -21,41 +21,15 @@ from typing import List, Dict
 from datasets import Dataset
 from transformers import (
     AutoTokenizer, 
-    AutoModel,
+    AutoModelForSequenceClassification,
     AutoModelForCausalLM,
     TrainingArguments,
     AutoConfig
 )
-from trl import RewardTrainer
+from trl import RewardTrainer, RewardConfig
 import numpy as np
 
-class CustomRewardModel(nn.Module):
-    """Custom reward model with Qwen 2.5-1.5B backbone"""
-    
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-1.5B-Instruct"):
-        super().__init__()
-        self.config = AutoConfig.from_pretrained(model_name)
-        self.transformer = AutoModel.from_pretrained(model_name)
-        
-        # Simple reward head
-        self.reward_head = nn.Linear(self.config.hidden_size, 1)
-        
-        # Initialize reward head
-        nn.init.normal_(self.reward_head.weight, std=0.02)
-        nn.init.zeros_(self.reward_head.bias)
-    
-    def forward(self, input_ids, attention_mask=None, **kwargs):
-        outputs = self.transformer(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
-        
-        # Use last token representation (standard for reward models)
-        sequence_lengths = attention_mask.sum(dim=1) - 1 if attention_mask is not None else input_ids.shape[1] - 1
-        batch_size = input_ids.shape[0]
-        
-        # Get last non-padding token for each sequence
-        last_hidden_states = outputs.last_hidden_state[range(batch_size), sequence_lengths]
-        reward = self.reward_head(last_hidden_states)
-        
-        return reward.squeeze(-1)
+# Remove the CustomRewardModel class since we're using AutoModelForSequenceClassification
 
 class SimplePreferenceGenerator:
     """Simplified preference pair generator"""
@@ -285,41 +259,24 @@ def main():
     logger.info(f"Training samples: {len(train_dataset)}")
     logger.info(f"Evaluation samples: {len(eval_dataset)}")
     
-    # Initialize model and tokenizer
+    # Initialize model and tokenizer (using AutoModelForSequenceClassification for TRL compatibility)
     logger.info(f"Loading reward model: {args.reward_model_name}")
+    reward_model = AutoModelForSequenceClassification.from_pretrained(
+        args.reward_model_name,
+        num_labels=1,  # Single scalar output for reward
+        torch_dtype=torch.float16,
+        device_map="auto"
+    )
+    tokenizer = AutoTokenizer.from_pretrained(args.reward_model_name)
     
-    try:
-        logger.info("Step 1: Loading AutoConfig...")
-        config = AutoConfig.from_pretrained(args.reward_model_name)
-        logger.info(f"✓ Config loaded successfully. Hidden size: {config.hidden_size}")
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
         
-        logger.info("Step 2: Loading AutoModel...")
-        transformer = AutoModel.from_pretrained(args.reward_model_name)
-        logger.info(f"✓ Transformer loaded successfully. Parameters: {sum(p.numel() for p in transformer.parameters()):,}")
-        
-        logger.info("Step 3: Creating CustomRewardModel...")
-        reward_model = CustomRewardModel(args.reward_model_name)
-        logger.info(f"✓ CustomRewardModel created successfully. Total parameters: {sum(p.numel() for p in reward_model.parameters()):,}")
-        
-        logger.info("Step 4: Loading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(args.reward_model_name)
-        logger.info(f"✓ Tokenizer loaded successfully. Vocab size: {tokenizer.vocab_size}")
-        
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-            logger.info("✓ Set pad_token to eos_token")
-        
-        logger.info("✓ All model components loaded successfully!")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to load model components: {e}")
-        logger.error(f"Error type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
+    # Set pad_token_id in model config to match tokenizer
+    reward_model.config.pad_token_id = tokenizer.pad_token_id
     
-    # Training arguments (TRL 0.20.0 uses standard TrainingArguments)
-    training_args = TrainingArguments(
+    # Training arguments (TRL 0.20.0 uses RewardConfig, not TrainingArguments)
+    training_args = RewardConfig(
         output_dir=args.output_dir,
         learning_rate=args.learning_rate,
         per_device_train_batch_size=args.batch_size,
@@ -339,91 +296,39 @@ def main():
         report_to=None,
         fp16=True,
         dataloader_pin_memory=False,
+        max_length=args.max_length,  # Required by TRL RewardTrainer
+        disable_dropout=True,  # Required by TRL 0.20.0
     )
     
     # Initialize TRL RewardTrainer (TRL 0.20.0 format)
-    logger.info("Initializing TRL RewardTrainer...")
-    
-    try:
-        logger.info("Step 1: Creating trainer instance...")
-        trainer = RewardTrainer(
-            model=reward_model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            processing_class=tokenizer,  # TRL 0.20.0 uses 'processing_class'
-        )
-        logger.info("✓ RewardTrainer created successfully!")
-        
-        logger.info("Step 2: Checking trainer attributes...")
-        logger.info(f"  - Model device: {next(reward_model.parameters()).device}")
-        logger.info(f"  - Training dataset size: {len(train_dataset)}")
-        logger.info(f"  - Evaluation dataset size: {len(eval_dataset)}")
-        logger.info(f"  - Training args: {vars(training_args)}")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize trainer: {e}")
-        logger.error(f"Error type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
+    trainer = RewardTrainer(
+        model=reward_model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        processing_class=tokenizer,  # TRL 0.20.0 uses 'processing_class'
+    )
     
     # Train
     logger.info("Starting training...")
-    
-    try:
-        trainer.train()
-        logger.info("✓ Training completed successfully!")
-    except Exception as e:
-        logger.error(f"❌ Training failed: {e}")
-        logger.error(f"Error type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
+    trainer.train()
     
     # Evaluate
     logger.info("Running final evaluation...")
+    eval_results = trainer.evaluate()
     
-    try:
-        eval_results = trainer.evaluate()
-        logger.info("✓ Evaluation completed successfully!")
-        
-        # Compute custom metrics
-        logger.info("Computing custom metrics...")
-        custom_metrics = compute_reward_metrics(eval_results)
-        eval_results.update(custom_metrics)
-        
-        logger.info(f"Final metrics: {eval_results}")
-        
-    except Exception as e:
-        logger.error(f"❌ Evaluation failed: {e}")
-        logger.error(f"Error type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
+    # Compute custom metrics
+    custom_metrics = compute_reward_metrics(eval_results)
+    eval_results.update(custom_metrics)
+    
+    logger.info(f"Final metrics: {eval_results}")
     
     # Save model
-    logger.info("Saving model and tokenizer...")
+    output_path = Path(args.output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
     
-    try:
-        output_path = Path(args.output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"✓ Created output directory: {output_path}")
-        
-        logger.info("Saving reward model...")
-        trainer.save_model(str(output_path))
-        logger.info("✓ Reward model saved successfully!")
-        
-        logger.info("Saving tokenizer...")
-        tokenizer.save_pretrained(str(output_path))
-        logger.info("✓ Tokenizer saved successfully!")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to save model: {e}")
-        logger.error(f"Error type: {type(e).__name__}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise
+    trainer.save_model(str(output_path))
+    tokenizer.save_pretrained(str(output_path))
     
     # Save training info
     with open(output_path / "training_info.json", "w") as f:
