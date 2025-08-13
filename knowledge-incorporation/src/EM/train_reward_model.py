@@ -199,7 +199,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train reward model for SEAL project")
     parser.add_argument("--data_dir", default="knowledge-incorporation/data")
     parser.add_argument("--output_dir", default="knowledge-incorporation/models/reward_model")
-    parser.add_argument("--reward_model_name", default="Qwen/Qwen2.5-1.5B-Instruct")
+    parser.add_argument("--reward_model_name", default="bert-base-uncased")  # Excellent for classification tasks
     parser.add_argument("--generation_model_name", default="Qwen/Qwen2.5-1.5B-Instruct")
     parser.add_argument("--num_samples", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -261,21 +261,48 @@ def main():
     
     # Initialize model and tokenizer (using AutoModelForSequenceClassification for TRL compatibility)
     logger.info(f"Loading reward model: {args.reward_model_name}")
-    reward_model = AutoModelForSequenceClassification.from_pretrained(
-        args.reward_model_name,
-        num_labels=1,  # Single scalar output for reward
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
-    tokenizer = AutoTokenizer.from_pretrained(args.reward_model_name)
-    
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    try:
+        reward_model = AutoModelForSequenceClassification.from_pretrained(
+            args.reward_model_name,
+            num_labels=1,  # Single scalar output for reward
+            torch_dtype=torch.float16,
+            device_map="auto"
+        )
+        tokenizer = AutoTokenizer.from_pretrained(args.reward_model_name)
         
-    # Set pad_token_id in model config to match tokenizer
-    reward_model.config.pad_token_id = tokenizer.pad_token_id
+        # Ensure BERT tokenizer has proper special tokens
+        if args.reward_model_name.startswith("bert"):
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            if tokenizer.sep_token is None:
+                tokenizer.sep_token = "[SEP]"
+            if tokenizer.cls_token is None:
+                tokenizer.cls_token = "[CLS]"
+        else:
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            
+        # Set pad_token_id in model config to match tokenizer
+        reward_model.config.pad_token_id = tokenizer.pad_token_id
+        
+        # Validate model configuration
+        if not hasattr(reward_model.config, 'num_labels') or reward_model.config.num_labels != 1:
+            logger.warning(f"Model config shows {getattr(reward_model.config, 'num_labels', 'unknown')} labels, expected 1")
+            reward_model.config.num_labels = 1
+            
+        logger.info(f"Successfully loaded {args.reward_model_name} with {reward_model.config.num_labels} output labels")
+        
+    except Exception as e:
+        logger.error(f"Failed to load reward model {args.reward_model_name}: {e}")
+        logger.error("Make sure the model supports sequence classification (not causal language modeling)")
+        return
     
     # Training arguments (TRL 0.20.0 uses RewardConfig, not TrainingArguments)
+    # Using BERT for reward modeling because:
+    # 1. It's designed for sequence classification (unlike causal LMs)
+    # 2. It has stable numerical outputs
+    # 3. It's well-tested with TRL's RewardTrainer
+    # 4. It's smaller and faster to train than large causal models
     training_args = RewardConfig(
         output_dir=args.output_dir,
         learning_rate=args.learning_rate,
@@ -336,7 +363,7 @@ def main():
             "args": vars(args),
             "final_metrics": eval_results,
             "num_preference_pairs": len(preference_data),
-            "model_architecture": "CustomRewardModel with Qwen2.5-1.5B"
+            "model_architecture": f"BERT-based reward model ({args.reward_model_name})"
         }, f, indent=2)
     
     logger.info(f"Training complete! Model saved to {output_path}")

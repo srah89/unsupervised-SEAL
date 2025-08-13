@@ -16,7 +16,8 @@ mkdir -p logs
 # -------- User-editable ---------------------------------------------- #
 DATA_DIR="knowledge-incorporation/data"
 OUTPUT_DIR="knowledge-incorporation/models/reward_model"
-REWARD_MODEL_NAME="Qwen/Qwen2.5-1.5B-Instruct"  # Updated to Qwen model
+# -------- Model Configuration ---------------------------------------- #
+REWARD_MODEL_NAME="bert-base-uncased"  # Excellent for classification and reward modeling
 GENERATION_MODEL_NAME="Qwen/Qwen2.5-1.5B-Instruct"  # Model for generating negative examples
 NUM_SAMPLES=2000  # Number of preference pairs to generate
 BATCH_SIZE=4  # Reduced for better memory management with custom architecture
