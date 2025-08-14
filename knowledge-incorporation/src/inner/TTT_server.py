@@ -37,6 +37,7 @@ import wandb
 from datasets import Dataset as HFDataset
 from peft import LoraConfig, get_peft_model
 from transformers import (
+    AutoModelForSequenceClassification,  # Added for reward model
     AutoModelForCausalLM,
     AutoTokenizer,
     DataCollatorWithPadding,
@@ -72,12 +73,88 @@ except LookupError:
 # Initialize sentence transformer model for semantic similarity
 sentence_model = None
 
+# Initialize reward model for preference learning
+reward_model = None
+reward_tokenizer = None
+reward_model_path = None  # Will be set from command line args
+
 def get_sentence_model():
     """Lazy load the sentence transformer model."""
     global sentence_model
     if sentence_model is None:
         sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
     return sentence_model
+
+def get_reward_model():
+    """Lazy load the reward model for preference learning."""
+    global reward_model, reward_tokenizer, reward_model_path
+    if reward_model is None and reward_model_path:
+        try:
+            if os.path.exists(reward_model_path):
+                LOG.info("Loading trained reward model from %s", reward_model_path)
+                reward_model = AutoModelForSequenceClassification.from_pretrained(
+                    reward_model_path,
+                    torch_dtype=torch.float32,
+                    device_map="auto"
+                )
+                reward_tokenizer = AutoTokenizer.from_pretrained(reward_model_path)
+                
+                # Ensure proper special tokens
+                if reward_tokenizer.pad_token is None:
+                    reward_tokenizer.pad_token = reward_tokenizer.eos_token
+                if hasattr(reward_tokenizer, 'sep_token') and reward_tokenizer.sep_token is None:
+                    reward_tokenizer.sep_token = "[SEP]"
+                if hasattr(reward_tokenizer, 'cls_token') and reward_tokenizer.cls_token is None:
+                    reward_tokenizer.cls_token = "[CLS]"
+                    
+                reward_model.eval()  # Set to evaluation mode
+                LOG.info("Reward model loaded successfully")
+            else:
+                LOG.warning("No trained reward model found at %s, using heuristic rewards", reward_model_path)
+                return None, None
+        except Exception as e:
+            LOG.warning("Failed to load reward model: %s, falling back to heuristic rewards", e)
+            return None, None
+    return reward_model, reward_tokenizer
+
+def compute_reward_model_score(text: str, prompt: str = "") -> float:
+    """Compute reward score using the trained reward model."""
+    reward_model, reward_tokenizer = get_reward_model()
+    if reward_model is None or reward_tokenizer is None:
+        return 0.0  # Fallback to heuristic if no reward model
+    
+    try:
+        # Format input for reward model (chosen text format)
+        input_text = f"{prompt}{text}" if prompt else text
+        
+        # Tokenize
+        inputs = reward_tokenizer(
+            input_text,
+            truncation=True,
+            max_length=512,
+            padding=True,
+            return_tensors="pt"
+        )
+        
+        # Move to same device as reward model
+        inputs = {k: v.to(reward_model.device) for k, v in inputs.items()}
+        
+        # Get reward score
+        with torch.no_grad():
+            outputs = reward_model(**inputs)
+            reward_score = outputs.logits.item()
+        
+        # Normalize reward to reasonable range (assuming reward model outputs are typically in [-10, 10])
+        normalized_reward = max(-1.0, min(1.0, reward_score / 10.0))
+        
+        LOG.debug("Reward model score: %.4f (normalized: %.4f) for text: %s", 
+                 reward_score, normalized_reward, text[:100])
+        
+        return normalized_reward
+        
+    except Exception as e:
+        LOG.warning("Error computing reward model score: %s, falling back to heuristic", e)
+        return 0.0
 
 # ---------------------------  CONFIG & LOGGING  ----------------------- #
 logging.basicConfig(
@@ -187,12 +264,29 @@ def compute_composite_reward(
     other_texts: List[str],
     prompt: str
 ) -> float:
-    """Compute composite reward by adding metric bonuses to adapter_mean."""
-    length_bonus = compute_length_bonus(text)
-    diversity_bonus = compute_diversity_bonus(text, other_texts)
-    quality_bonus = compute_quality_bonus(text, prompt)
+    """Compute composite reward using reward model + heuristic bonuses."""
+    # Primary reward from trained reward model
+    reward_model_score = compute_reward_model_score(text, prompt)
+    
+    # Fallback to heuristic rewards if reward model is not available
+    if reward_model_score == 0.0:
+        LOG.debug("Using heuristic rewards (reward model not available)")
+        length_bonus = compute_length_bonus(text)
+        diversity_bonus = compute_diversity_bonus(text, other_texts)
+        quality_bonus = compute_quality_bonus(text, prompt)
+        composite_reward = adapter_mean + length_bonus + diversity_bonus + quality_bonus
+    else:
+        LOG.debug("Using reward model score: %.4f", reward_model_score)
+        # Combine reward model score with adapter accuracy
+        # Reward model provides preference score, adapter accuracy provides factual correctness
+        composite_reward = (reward_model_score * 0.7) + (adapter_mean * 0.3)
         
-    composite_reward = adapter_mean + length_bonus + diversity_bonus + quality_bonus
+        # Add small heuristic bonuses for additional guidance
+        length_bonus = compute_length_bonus(text) * 0.1  # Reduced weight
+        diversity_bonus = compute_diversity_bonus(text, other_texts) * 0.1  # Reduced weight
+        quality_bonus = compute_quality_bonus(text, prompt) * 0.1  # Reduced weight
+        
+        composite_reward += length_bonus + diversity_bonus + quality_bonus
     
     return composite_reward
 
@@ -245,7 +339,19 @@ def main():
     p.add_argument("--eval_max_tokens", type=int, default=64, help="Eval max tokens to generate")
     p.add_argument("--keep_adapter_dir",  action="store_true",
                    help="Skip tmp-dir deletion so outer driver can reuse the LoRA. This causes high disk usage and is only used in continual_self_edits.py or for debugging.")
+    p.add_argument("--use_reward_model", action="store_true", 
+                   help="Use trained reward model for preference scoring (falls back to heuristics if not available)")
+    p.add_argument("--reward_model_path", default="knowledge-incorporation/models/reward_model",
+                   help="Path to trained reward model")
     args = p.parse_args()
+
+    # Set global reward model path if specified
+    global reward_model_path
+    if args.use_reward_model:
+        reward_model_path = args.reward_model_path
+        LOG.info("Reward model enabled, will load from: %s", reward_model_path)
+    else:
+        LOG.info("Reward model disabled, using heuristic rewards only")
 
     # initialize vLLM API
     set_vllm_api_url(args.vllm_api_url)
@@ -446,16 +552,20 @@ def main():
                     diversity_bonus = compute_diversity_bonus(text, other_texts)
                     quality_bonus = compute_quality_bonus(text, prompt)
                     
-                    # Compute composite reward
+                    # Compute composite reward (now uses reward model if available)
                     composite_reward = compute_composite_reward(
                         adapter_acc, text, other_texts, prompt
                     )
+                    
+                    # Log which reward method was used
+                    reward_method = "reward_model" if reward_model is not None else "heuristic"
                     
                     adapter_metrics.append({
                         "length_bonus": float(round(length_bonus, 4)),
                         "diversity_bonus": float(round(diversity_bonus, 4)),
                         "quality_bonus": float(round(quality_bonus, 4)),
                         "composite_reward": float(round(composite_reward, 4)),
+                        "reward_method": reward_method,  # Track which method was used
                     })
                 
                 unload_adapter(adapter_name)
@@ -486,6 +596,9 @@ def main():
                 # Log to wandb if available
                 try:
                     if wandb.run is not None:
+                        # Determine reward method used
+                        reward_method = "reward_model" if reward_model is not None else "heuristic"
+                        
                         wandb.log({
                             "step": step,
                             "baseline_accuracy": base_acc,
@@ -498,6 +611,7 @@ def main():
                             "lora_alpha": lora_alpha,
                             "finetune_epochs": finetune_epochs,
                             "finetune_lr": finetune_lr,
+                            "reward_method": reward_method,  # Track which reward method was used
                             "mean_length_bonus": np.mean([m["length_bonus"] for m in adapter_metrics]),
                             "mean_diversity_bonus": np.mean([m["diversity_bonus"] for m in adapter_metrics]),
                             "mean_quality_bonus": np.mean([m["quality_bonus"] for m in adapter_metrics]),

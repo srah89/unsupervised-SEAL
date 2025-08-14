@@ -24,6 +24,10 @@ EVAL_TEMPERATURE=0.0
 EVAL_TOP_P=1.0
 
 MAX_LORA_RANK=32     # Max LoRA rank that will be used
+
+# -------- Reward Model Configuration ---------------------------------------- #
+USE_REWARD_MODEL=true  # Set to true to use trained reward model
+REWARD_MODEL_PATH="knowledge-incorporation/models/reward_model"  # Path to trained reward model
 # --------------------------------------------------------------------- #
 echo "Launching TTT server on $(hostname)..."
 
@@ -70,6 +74,8 @@ CUDA_VISIBLE_DEVICES=${INNER_LOOP_GPU} python3 -m knowledge-incorporation.src.in
     --eval_max_tokens ${EVAL_MAX_TOKENS} \
     --eval_temperature ${EVAL_TEMPERATURE} \
     --eval_top_p ${EVAL_TOP_P} \
+    --use_reward_model ${USE_REWARD_MODEL} \
+    --reward_model_path "${REWARD_MODEL_PATH}" \
     > logs/${SLURM_JOB_ID}_TTT_server.log 2>&1 &
 
 ZMQ_PID=$!
