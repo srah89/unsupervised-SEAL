@@ -85,7 +85,7 @@ if [ "$USE_REWARD_MODEL" = "true" ]; then
 fi
 
 echo "Starting TTT Server with args: ${CMD_ARGS[*]}"
-python3 src/inner/TTT_server.py \
+python3 knowledge-incorporation/src/inner/TTT_server.py \
     --zmq_port 5555 \
     --vllm_api_url http://localhost:8001 \
     --model Qwen/Qwen2.5-7B \
