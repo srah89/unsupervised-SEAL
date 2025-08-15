@@ -67,25 +67,41 @@ echo "    vLLM ready at ${VLLM_API_URL}"
 
 echo "Starting Inner Loop server on GPU ${INNER_LOOP_GPU}..."
 
-# Build command with conditional reward model arguments
-CMD_ARGS=(
-    --vllm_api_url "${VLLM_API_URL}"
-    --model "${MODEL_NAME}"
-    --zmq_port ${ZMQ_PORT}
-    --max_seq_length ${MAX_SEQ_LENGTH}
-    --eval_max_tokens ${EVAL_MAX_TOKENS}
-    --eval_temperature ${EVAL_TEMPERATURE}
-    --eval_top_p ${EVAL_TOP_P}
-)
+# TTT Server Configuration
+USE_REWARD_MODEL=true
+REWARD_MODEL_PATH="models/reward_model"
+REWARD_MODEL_WEIGHT=1.0      # 0.0 = pure heuristics, 1.0 = pure reward model
+ADAPTER_WEIGHT=0.0           # 0.0 = no adapter accuracy, 1.0 = pure adapter
+HEURISTIC_WEIGHT=0.0         # 0.0 = no heuristics, 1.0 = full heuristics
 
-# Add reward model arguments if enabled
-if [ "${USE_REWARD_MODEL}" = true ]; then
-    CMD_ARGS+=(--use_reward_model)
-    CMD_ARGS+=(--reward_model_path "${REWARD_MODEL_PATH}")
+# Build command arguments
+CMD_ARGS=()
+if [ "$USE_REWARD_MODEL" = "true" ]; then
+    CMD_ARGS+=("--use_reward_model")
+    CMD_ARGS+=("--reward_model_path" "$REWARD_MODEL_PATH")
+    CMD_ARGS+=("--reward_model_weight" "$REWARD_MODEL_WEIGHT")
+    CMD_ARGS+=("--adapter_weight" "$ADAPTER_WEIGHT")
+    CMD_ARGS+=("--heuristic_weight" "$HEURISTIC_WEIGHT")
 fi
 
-CUDA_VISIBLE_DEVICES=${INNER_LOOP_GPU} python3 -m knowledge-incorporation.src.inner.TTT_server "${CMD_ARGS[@]}" \
-    > logs/${SLURM_JOB_ID}_TTT_server.log 2>&1 &
+echo "Starting TTT Server with args: ${CMD_ARGS[*]}"
+python3 src/inner/TTT_server.py \
+    --zmq_port 5555 \
+    --vllm_api_url http://localhost:8001 \
+    --model Qwen/Qwen2.5-7B \
+    --instruct_model \
+    --max_seq_length 2048 \
+    --eval_temperature 0.0 \
+    --eval_top_p 1.0 \
+    --eval_max_tokens 64 \
+    --finetune_epochs 5 \
+    --finetune_lr 0.001 \
+    --lora_rank 32 \
+    --lora_alpha 64 \
+    --lora_dropout 0.0 \
+    --batch_size 1 \
+    --gradient_accumulation_steps 1 \
+    "${CMD_ARGS[@]}"
 
 ZMQ_PID=$!
 echo "    Inner Loop Server started with PID ${ZMQ_PID}."

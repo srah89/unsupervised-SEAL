@@ -77,6 +77,9 @@ sentence_model = None
 reward_model = None
 reward_tokenizer = None
 reward_model_path = None  # Will be set from command line args
+reward_model_weight = 1.0  # Weight for reward model score
+adapter_weight = 0.0      # Weight for adapter accuracy  
+heuristic_weight = 0.0    # Weight for heuristic bonuses
 
 def get_sentence_model():
     """Lazy load the sentence transformer model."""
@@ -282,39 +285,59 @@ def compute_composite_reward(
     other_texts: List[str],
     prompt: str
 ) -> float:
-    """Compute composite reward using reward model + heuristic bonuses."""
+    """Compute composite reward using configurable weights for reward model, adapter accuracy, and heuristics."""
     LOG.info("compute_composite_reward called with adapter_mean: %.4f, text: %s", adapter_mean, text[:50])
     
-    # Primary reward from trained reward model
+    # Get reward model score
     reward_model_score = compute_reward_model_score(text, prompt)
     LOG.info("Reward model score returned: %.4f", reward_model_score)
     
-    # Fallback to heuristic rewards if reward model is not available
-    if reward_model_score == 0.0:
-        LOG.info("Using heuristic rewards (reward model not available)")
+    # Initialize reward components
+    total_reward = 0.0
+    components = []
+    
+    # Add reward model component if available and weight > 0
+    if reward_model_score != 0.0 and reward_model_weight > 0.0:
+        reward_component = reward_model_score * reward_model_weight
+        total_reward += reward_component
+        components.append(f"reward_model({reward_model_weight}): {reward_component:.4f}")
+        LOG.info("Adding reward model component: %.4f (weight: %.2f)", reward_component, reward_model_weight)
+    
+    # Add adapter accuracy component if weight > 0
+    if adapter_weight > 0.0:
+        adapter_component = adapter_mean * adapter_weight
+        total_reward += adapter_component
+        components.append(f"adapter({adapter_weight}): {adapter_component:.4f}")
+        LOG.info("Adding adapter component: %.4f (weight: %.2f)", adapter_component, adapter_weight)
+    
+    # Add heuristic components if weight > 0
+    if heuristic_weight > 0.0:
+        length_bonus = compute_length_bonus(text) * heuristic_weight
+        diversity_bonus = compute_diversity_bonus(text, other_texts) * heuristic_weight
+        quality_bonus = compute_quality_bonus(text, prompt) * heuristic_weight
+        
+        total_reward += length_bonus + diversity_bonus + quality_bonus
+        components.extend([
+            f"length({heuristic_weight}): {length_bonus:.4f}",
+            f"diversity({heuristic_weight}): {diversity_bonus:.4f}", 
+            f"quality({heuristic_weight}): {quality_bonus:.4f}"
+        ])
+        LOG.info("Adding heuristic components - length: %.4f, diversity: %.4f, quality: %.4f (weight: %.2f)", 
+                length_bonus, diversity_bonus, quality_bonus, heuristic_weight)
+    
+    # Fallback to pure heuristics if no other components available
+    if total_reward == 0.0:
+        LOG.info("No components available, using pure heuristic rewards")
         length_bonus = compute_length_bonus(text)
         diversity_bonus = compute_diversity_bonus(text, other_texts)
         quality_bonus = compute_quality_bonus(text, prompt)
-        composite_reward = adapter_mean + length_bonus + diversity_bonus + quality_bonus
-        LOG.info("Heuristic rewards - length: %.4f, diversity: %.4f, quality: %.4f, total: %.4f", 
-                length_bonus, diversity_bonus, quality_bonus, composite_reward)
-    else:
-        LOG.info("Using reward model score: %.4f", reward_model_score)
-        # Combine reward model score with adapter accuracy
-        # Reward model provides preference score, adapter accuracy provides factual correctness
-        composite_reward = (reward_model_score * 0.7) + (adapter_mean * 0.3)
-        
-        # Add small heuristic bonuses for additional guidance
-        length_bonus = compute_length_bonus(text) * 0.1  # Reduced weight
-        diversity_bonus = compute_diversity_bonus(text, other_texts) * 0.1  # Reduced weight
-        quality_bonus = compute_quality_bonus(text, prompt) * 0.1  # Reduced weight
-        
-        composite_reward += length_bonus + diversity_bonus + quality_bonus
-        
-        LOG.info("Reward model + heuristics - base: %.4f, length: %.4f, diversity: %.4f, quality: %.4f, total: %.4f", 
-                (reward_model_score * 0.7) + (adapter_mean * 0.3), length_bonus, diversity_bonus, quality_bonus, composite_reward)
+        total_reward = adapter_mean + length_bonus + diversity_bonus + quality_bonus
+        components = ["fallback_heuristics"]
+        LOG.info("Fallback heuristics - length: %.4f, diversity: %.4f, quality: %.4f, total: %.4f", 
+                length_bonus, diversity_bonus, quality_bonus, total_reward)
     
-    return composite_reward
+    LOG.info("Final reward: %.4f (components: %s)", total_reward, ", ".join(components))
+    return total_reward
 
 
 def accuracy_and_texts(
@@ -369,6 +392,12 @@ def main():
                    help="Use trained reward model for preference scoring (falls back to heuristics if not available)")
     p.add_argument("--reward_model_path", default="models/reward_model",  # Changed to SEAL/models/reward_model
                    help="Path to trained reward model")
+    p.add_argument("--reward_model_weight", type=float, default=1.0, 
+                   help="Weight for reward model score (0.0 = pure heuristics, 1.0 = pure reward model)")
+    p.add_argument("--adapter_weight", type=float, default=0.0, 
+                   help="Weight for adapter accuracy (0.0 = no adapter, 1.0 = pure adapter)")
+    p.add_argument("--heuristic_weight", type=float, default=0.0, 
+                   help="Weight for heuristic bonuses (0.0 = no heuristics, 1.0 = full heuristics)")
     args = p.parse_args()
 
     # Set global reward model path if specified
@@ -378,6 +407,14 @@ def main():
         LOG.info("Reward model enabled, will load from: %s", reward_model_path)
     else:
         LOG.info("Reward model disabled, using heuristic rewards only")
+
+    # Set global configurable weights
+    global reward_model_weight, adapter_weight, heuristic_weight
+    reward_model_weight = args.reward_model_weight
+    adapter_weight = args.adapter_weight
+    heuristic_weight = args.heuristic_weight
+    LOG.info("Weights - Reward Model: %.2f, Adapter: %.2f, Heuristic: %.2f", 
+             reward_model_weight, adapter_weight, heuristic_weight)
 
     # initialize vLLM API
     set_vllm_api_url(args.vllm_api_url)
