@@ -198,7 +198,7 @@ def compute_reward_metrics(eval_results):
 def main():
     parser = argparse.ArgumentParser(description="Train reward model for SEAL project")
     parser.add_argument("--data_dir", default="knowledge-incorporation/data")
-    parser.add_argument("--output_dir", default="knowledge-incorporation/models/reward_model")
+    parser.add_argument("--output_dir", default="models/reward_model")  # Changed to SEAL/models/reward_model
     parser.add_argument("--reward_model_name", default="bert-base-uncased")  # Excellent for classification tasks
     parser.add_argument("--generation_model_name", default="Qwen/Qwen2.5-1.5B-Instruct")
     parser.add_argument("--num_samples", type=int, default=1000)

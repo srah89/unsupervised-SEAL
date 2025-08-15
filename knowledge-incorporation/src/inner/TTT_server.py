@@ -88,6 +88,8 @@ def get_sentence_model():
 def get_reward_model():
     """Lazy load the reward model for preference learning."""
     global reward_model, reward_tokenizer, reward_model_path
+    LOG.info("get_reward_model called with path: %s", reward_model_path)
+    
     if reward_model is None and reward_model_path:
         try:
             if os.path.exists(reward_model_path):
@@ -108,24 +110,34 @@ def get_reward_model():
                     reward_tokenizer.cls_token = "[CLS]"
                     
                 reward_model.eval()  # Set to evaluation mode
-                LOG.info("Reward model loaded successfully")
+                LOG.info("Reward model loaded successfully - Model: %s, Tokenizer: %s", 
+                        type(reward_model).__name__, type(reward_tokenizer).__name__)
             else:
                 LOG.warning("No trained reward model found at %s, using heuristic rewards", reward_model_path)
                 return None, None
         except Exception as e:
             LOG.warning("Failed to load reward model: %s, falling back to heuristic rewards", e)
+            import traceback
+            LOG.warning("Full traceback: %s", traceback.format_exc())
             return None, None
+    else:
+        LOG.info("Reward model already loaded or path not set")
+    
     return reward_model, reward_tokenizer
 
 def compute_reward_model_score(text: str, prompt: str = "") -> float:
     """Compute reward score using the trained reward model."""
+    LOG.info("compute_reward_model_score called with text: %s, prompt: %s", text[:50], prompt[:50])
+    
     reward_model, reward_tokenizer = get_reward_model()
     if reward_model is None or reward_tokenizer is None:
+        LOG.warning("Reward model or tokenizer is None, returning 0.0")
         return 0.0  # Fallback to heuristic if no reward model
     
     try:
         # Format input for reward model (chosen text format)
         input_text = f"{prompt}{text}" if prompt else text
+        LOG.info("Formatted input text: %s", input_text[:100])
         
         # Tokenize
         inputs = reward_tokenizer(
@@ -135,25 +147,31 @@ def compute_reward_model_score(text: str, prompt: str = "") -> float:
             padding=True,
             return_tensors="pt"
         )
+        LOG.info("Tokenization successful, input shape: %s", inputs['input_ids'].shape)
         
         # Move to same device as reward model
         inputs = {k: v.to(reward_model.device) for k, v in inputs.items()}
+        LOG.info("Inputs moved to device: %s", reward_model.device)
         
         # Get reward score
         with torch.no_grad():
             outputs = reward_model(**inputs)
             reward_score = outputs.logits.item()
         
+        LOG.info("Raw reward score: %.4f", reward_score)
+        
         # Normalize reward to reasonable range (assuming reward model outputs are typically in [-10, 10])
         normalized_reward = max(-1.0, min(1.0, reward_score / 10.0))
         
-        LOG.debug("Reward model score: %.4f (normalized: %.4f) for text: %s", 
+        LOG.info("Reward model score: %.4f (normalized: %.4f) for text: %s", 
                  reward_score, normalized_reward, text[:100])
         
         return normalized_reward
         
     except Exception as e:
         LOG.warning("Error computing reward model score: %s, falling back to heuristic", e)
+        import traceback
+        LOG.warning("Full traceback: %s", traceback.format_exc())
         return 0.0
 
 # ---------------------------  CONFIG & LOGGING  ----------------------- #
@@ -265,18 +283,23 @@ def compute_composite_reward(
     prompt: str
 ) -> float:
     """Compute composite reward using reward model + heuristic bonuses."""
+    LOG.info("compute_composite_reward called with adapter_mean: %.4f, text: %s", adapter_mean, text[:50])
+    
     # Primary reward from trained reward model
     reward_model_score = compute_reward_model_score(text, prompt)
+    LOG.info("Reward model score returned: %.4f", reward_model_score)
     
     # Fallback to heuristic rewards if reward model is not available
     if reward_model_score == 0.0:
-        LOG.debug("Using heuristic rewards (reward model not available)")
+        LOG.info("Using heuristic rewards (reward model not available)")
         length_bonus = compute_length_bonus(text)
         diversity_bonus = compute_diversity_bonus(text, other_texts)
         quality_bonus = compute_quality_bonus(text, prompt)
         composite_reward = adapter_mean + length_bonus + diversity_bonus + quality_bonus
+        LOG.info("Heuristic rewards - length: %.4f, diversity: %.4f, quality: %.4f, total: %.4f", 
+                length_bonus, diversity_bonus, quality_bonus, composite_reward)
     else:
-        LOG.debug("Using reward model score: %.4f", reward_model_score)
+        LOG.info("Using reward model score: %.4f", reward_model_score)
         # Combine reward model score with adapter accuracy
         # Reward model provides preference score, adapter accuracy provides factual correctness
         composite_reward = (reward_model_score * 0.7) + (adapter_mean * 0.3)
@@ -287,6 +310,9 @@ def compute_composite_reward(
         quality_bonus = compute_quality_bonus(text, prompt) * 0.1  # Reduced weight
         
         composite_reward += length_bonus + diversity_bonus + quality_bonus
+        
+        LOG.info("Reward model + heuristics - base: %.4f, length: %.4f, diversity: %.4f, quality: %.4f, total: %.4f", 
+                (reward_model_score * 0.7) + (adapter_mean * 0.3), length_bonus, diversity_bonus, quality_bonus, composite_reward)
     
     return composite_reward
 
@@ -341,7 +367,7 @@ def main():
                    help="Skip tmp-dir deletion so outer driver can reuse the LoRA. This causes high disk usage and is only used in continual_self_edits.py or for debugging.")
     p.add_argument("--use_reward_model", action="store_true", default=True,
                    help="Use trained reward model for preference scoring (falls back to heuristics if not available)")
-    p.add_argument("--reward_model_path", default="knowledge-incorporation/models/reward_model",
+    p.add_argument("--reward_model_path", default="models/reward_model",  # Changed to SEAL/models/reward_model
                    help="Path to trained reward model")
     args = p.parse_args()
 

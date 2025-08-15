@@ -27,7 +27,7 @@ MAX_LORA_RANK=32     # Max LoRA rank that will be used
 
 # -------- Reward Model Configuration ---------------------------------------- #
 USE_REWARD_MODEL=true  # Default: true (reward model enabled by default)
-REWARD_MODEL_PATH="knowledge-incorporation/models/reward_model"  # Path to trained reward model
+REWARD_MODEL_PATH="models/reward_model"  # Changed to SEAL/models/reward_model
 # --------------------------------------------------------------------- #
 echo "Launching TTT server on $(hostname)..."
 
@@ -66,16 +66,25 @@ until curl --silent --fail ${VLLM_API_URL}/health >/dev/null; do sleep 3; done
 echo "    vLLM ready at ${VLLM_API_URL}"
 
 echo "Starting Inner Loop server on GPU ${INNER_LOOP_GPU}..."
-CUDA_VISIBLE_DEVICES=${INNER_LOOP_GPU} python3 -m knowledge-incorporation.src.inner.TTT_server \
-    --vllm_api_url "${VLLM_API_URL}" \
-    --model "${MODEL_NAME}" \
-    --zmq_port ${ZMQ_PORT} \
-    --max_seq_length ${MAX_SEQ_LENGTH} \
-    --eval_max_tokens ${EVAL_MAX_TOKENS} \
-    --eval_temperature ${EVAL_TEMPERATURE} \
-    --eval_top_p ${EVAL_TOP_P} \
-    --use_reward_model ${USE_REWARD_MODEL} \
-    --reward_model_path "${REWARD_MODEL_PATH}" \
+
+# Build command with conditional reward model arguments
+CMD_ARGS=(
+    --vllm_api_url "${VLLM_API_URL}"
+    --model "${MODEL_NAME}"
+    --zmq_port ${ZMQ_PORT}
+    --max_seq_length ${MAX_SEQ_LENGTH}
+    --eval_max_tokens ${EVAL_MAX_TOKENS}
+    --eval_temperature ${EVAL_TEMPERATURE}
+    --eval_top_p ${EVAL_TOP_P}
+)
+
+# Add reward model arguments if enabled
+if [ "${USE_REWARD_MODEL}" = true ]; then
+    CMD_ARGS+=(--use_reward_model)
+    CMD_ARGS+=(--reward_model_path "${REWARD_MODEL_PATH}")
+fi
+
+CUDA_VISIBLE_DEVICES=${INNER_LOOP_GPU} python3 -m knowledge-incorporation.src.inner.TTT_server "${CMD_ARGS[@]}" \
     > logs/${SLURM_JOB_ID}_TTT_server.log 2>&1 &
 
 ZMQ_PID=$!
