@@ -339,7 +339,7 @@ def main():
     p.add_argument("--eval_max_tokens", type=int, default=64, help="Eval max tokens to generate")
     p.add_argument("--keep_adapter_dir",  action="store_true",
                    help="Skip tmp-dir deletion so outer driver can reuse the LoRA. This causes high disk usage and is only used in continual_self_edits.py or for debugging.")
-    p.add_argument("--use_reward_model", action="store_true", 
+    p.add_argument("--use_reward_model", action="store_true", default=True,
                    help="Use trained reward model for preference scoring (falls back to heuristics if not available)")
     p.add_argument("--reward_model_path", default="knowledge-incorporation/models/reward_model",
                    help="Path to trained reward model")

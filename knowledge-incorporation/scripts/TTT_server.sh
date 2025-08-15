@@ -26,7 +26,7 @@ EVAL_TOP_P=1.0
 MAX_LORA_RANK=32     # Max LoRA rank that will be used
 
 # -------- Reward Model Configuration ---------------------------------------- #
-USE_REWARD_MODEL=true  # Set to true to use trained reward model
+USE_REWARD_MODEL=true  # Default: true (reward model enabled by default)
 REWARD_MODEL_PATH="knowledge-incorporation/models/reward_model"  # Path to trained reward model
 # --------------------------------------------------------------------- #
 echo "Launching TTT server on $(hostname)..."
