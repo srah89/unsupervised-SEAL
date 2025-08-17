@@ -488,7 +488,11 @@ def main():
                 # Ensure base model is clean before LoRA training
                 if hasattr(base_model, 'peft_config'):
                     LOG.info("Cleaning up existing PEFT state before baseline evaluation")
-                    base_model = base_model.get_base_model()
+                    # Only call get_base_model() if it's actually a PEFT model
+                    if hasattr(base_model, 'get_base_model'):
+                        base_model = base_model.get_base_model()
+                    else:
+                        LOG.info("Model is already a base model, no cleanup needed")
 
                 if skip_training or not train_sequences:
                     reply = {
@@ -563,7 +567,11 @@ def main():
                 # Ensure we start with a clean base model (no existing PEFT configs)
                 if hasattr(base_model, 'peft_config'):
                     LOG.info("Cleaning up existing PEFT state before new LoRA training")
-                    base_model = base_model.get_base_model()
+                    # Only call get_base_model() if it's actually a PEFT model
+                    if hasattr(base_model, 'get_base_model'):
+                        base_model = base_model.get_base_model()
+                    else:
+                        LOG.info("Model is already a base model, no cleanup needed")
 
                 lora_cfg = LoraConfig(
                     r=lora_rank, lora_alpha=lora_alpha,
@@ -648,8 +656,11 @@ def main():
                 # Ensure complete cleanup of PEFT state to prevent multiple adapter issues
                 if hasattr(base_model, 'peft_config'):
                     LOG.info("Cleaning up PEFT state to prevent multiple adapter issues")
-                    # Get the base model without any PEFT configurations
-                    base_model = base_model.get_base_model()
+                    # Only call get_base_model() if it's actually a PEFT model
+                    if hasattr(base_model, 'get_base_model'):
+                        base_model = base_model.get_base_model()
+                    else:
+                        LOG.info("Model is already a base model, no cleanup needed")
                 
                 if not args.keep_adapter_dir:
                     shutil.rmtree(tmp_dir, ignore_errors=True)
