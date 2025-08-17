@@ -485,6 +485,11 @@ def main():
                     instruct_model=args.instruct_model,
                 )
 
+                # Ensure base model is clean before LoRA training
+                if hasattr(base_model, 'peft_config'):
+                    LOG.info("Cleaning up existing PEFT state before baseline evaluation")
+                    base_model = base_model.get_base_model()
+
                 if skip_training or not train_sequences:
                     reply = {
                         "baseline_accuracy": round(base_acc, 4),
@@ -555,6 +560,11 @@ def main():
                 ds = HFDataset.from_list(rows)
                 collator = DataCollatorWithPadding(tokenizer)
 
+                # Ensure we start with a clean base model (no existing PEFT configs)
+                if hasattr(base_model, 'peft_config'):
+                    LOG.info("Cleaning up existing PEFT state before new LoRA training")
+                    base_model = base_model.get_base_model()
+
                 lora_cfg = LoraConfig(
                     r=lora_rank, lora_alpha=lora_alpha,
                     lora_dropout=lora_dropout, task_type="CAUSAL_LM"
@@ -584,6 +594,7 @@ def main():
 
                 # ---------- evaluation with adapter ------------------------------- #
                 adapter_name = tmp_tag
+                LOG.info("Loading LoRA adapter: %s", adapter_name)
                 load_adapter(str(adapter_path), adapter_name)
 
                 adapter_acc, adapter_texts, adapter_ok = accuracy_and_texts(
@@ -628,10 +639,18 @@ def main():
                         "diversity_bonus": float(round(diversity_bonus, 4)),
                         "quality_bonus": float(round(quality_bonus, 4)),
                         "composite_reward": float(round(composite_reward, 4)),
-                        "reward_method": reward_method,  # Track which method was used
+                        "reward_method": reward_method, # Track which method was used
                     })
                 
+                LOG.info("Unloading LoRA adapter: %s", adapter_name)
                 unload_adapter(adapter_name)
+                
+                # Ensure complete cleanup of PEFT state to prevent multiple adapter issues
+                if hasattr(base_model, 'peft_config'):
+                    LOG.info("Cleaning up PEFT state to prevent multiple adapter issues")
+                    # Get the base model without any PEFT configurations
+                    base_model = base_model.get_base_model()
+                
                 if not args.keep_adapter_dir:
                     shutil.rmtree(tmp_dir, ignore_errors=True)
                 gc.collect();  torch.cuda.empty_cache()

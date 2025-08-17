@@ -40,10 +40,12 @@ def parse_args():
     return p.parse_args()
 
 def longest_seq_len(dataset, tok):
-    return max(
+    max_len = max(
         len(tok(example["prompt"] + example["completion"]).input_ids)
         for example in dataset
     )
+    print(f"Longest sequence length: {max_len}")
+    return max_len
 
 def main() -> None:
     args = parse_args()
@@ -78,6 +80,18 @@ def main() -> None:
             args.disable_wandb = True
 
     dataset = load_dataset("json", data_files=args.train_file, split="train")
+    
+    # Debug logging for dataset
+    print(f"Dataset loaded: {len(dataset)} examples")
+    if len(dataset) > 0:
+        print(f"First example keys: {list(dataset[0].keys())}")
+        print(f"First example preview: {str(dataset[0])[:200]}...")
+    
+    # Calculate expected training steps
+    expected_steps = (len(dataset) * args.num_train_epochs) // (args.per_device_batch_size * args.gradient_accumulation_steps)
+    print(f"Expected training steps: {expected_steps}")
+    print(f"Dataset size: {len(dataset)}, Epochs: {args.num_train_epochs}")
+    print(f"Batch size: {args.per_device_batch_size}, Gradient accumulation: {args.gradient_accumulation_steps}")
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
@@ -111,6 +125,17 @@ def main() -> None:
         # Enable wandb logging in trainer
         report_to=["wandb"] if not args.disable_wandb else [],
     )
+    
+    # Log SFT configuration
+    print(f"SFT Configuration:")
+    print(f"  Output dir: {sft_args.output_dir}")
+    print(f"  Batch size: {sft_args.per_device_train_batch_size}")
+    print(f"  Gradient accumulation: {sft_args.gradient_accumulation_steps}")
+    print(f"  Epochs: {sft_args.num_train_epochs}")
+    print(f"  Learning rate: {sft_args.learning_rate}")
+    print(f"  Logging steps: {sft_args.logging_steps}")
+    print(f"  Max length: {sft_args.max_length}")
+    print(f"  Report to: {sft_args.report_to}")
 
     lora_cfg = LoraConfig(
         r=args.lora_rank,
@@ -120,6 +145,14 @@ def main() -> None:
         task_type="CAUSAL_LM",
         target_modules=args.lora_target_modules.split(","),
     )
+    
+    # Log LoRA configuration
+    print(f"LoRA Configuration:")
+    print(f"  Rank: {lora_cfg.r}")
+    print(f"  Alpha: {lora_cfg.lora_alpha}")
+    print(f"  Dropout: {lora_cfg.lora_dropout}")
+    print(f"  Target modules: {lora_cfg.target_modules}")
+    print(f"  Task type: {lora_cfg.task_type}")
 
     trainer = SFTTrainer(
         model=model,
