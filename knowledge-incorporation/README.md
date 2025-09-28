@@ -34,14 +34,14 @@ sbatch knowledge-incorporation/scripts/TTT_server.sh
 ```
 
 ### 3. Query server
-To query the server, run either `query_server` or `CPT` for either the single-passage or multi-passage setting respectively. This can be set to run on training documents for a round of ReST-EM RL training, or on validation documents for evaluation. 
+To query the server, run either `query_server` or `CPT` for either the single-passage or multi-passage setting respectively. This can be set to run on training documents for a round of GRPO training, or on validation documents for evaluation. 
 
 ```bash
 sbatch knowledge-incorporation/scripts/query_server.sh
 ```
 
 ### 4. RL Training
-To run a round of ReST-EM, after running `query_server` on training documents, build the SFT dataset (more documentation in the python file):
+To run GRPO, after running `query_server` on training documents, build the SFT dataset (more documentation in the python file):
 
 ```bash
 python3 knowledge-incorporation/src/EM/build_SFT_dataset.py <path/to/result/of/run.json>
@@ -53,9 +53,4 @@ Then, run the training script on this dataset:
 sbatch knowledge-incorporation/scripts/train_SFT.sh
 ```
 
-### 5. Continual Self-Edits
-To run the continual self-edits experiment (Section 5):
 
-```bash
-sbatch knowledge-incorporation/scripts/continual_self_edits.sh
-```
