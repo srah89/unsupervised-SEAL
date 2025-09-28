@@ -10,7 +10,7 @@ The python files in src/ have documentation on function. Here is some informatio
 Run `pip install -r requirements.txt` and `python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"` to set up.
 
 ### 1. Create Data
-Use `make_squad_data.sh` (or `make_squad_data_openai.sh`) to create the synthetic data used in subsequent RL training or evaluation.
+Use `make_squad_data.sh` (or `make_squad_data_openai.sh`) to create the synthetic data and QA pairs used in subsequent RL training or evaluation.
 
 ```bash
 sbatch knowledge-incorporation/scripts/make_squad_data.sh
