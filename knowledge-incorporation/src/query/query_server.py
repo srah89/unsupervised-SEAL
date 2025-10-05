@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--split_newlines", action="store_true")
     
     # Wandb configuration
-    p.add_argument("--wandb_project", default="yoruba-knowledge-incorporation")
+    p.add_argument("--wandb_project", default=None)
     p.add_argument("--wandb_entity", default=None)
     p.add_argument("--wandb_run_name", default=None)
     p.add_argument("--wandb_tags", nargs="*", default=[])
