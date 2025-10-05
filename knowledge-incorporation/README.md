@@ -1,6 +1,6 @@
 # SEAL - knowledge-incorporation
 
-This is an implementation of SEAL for the *knowledge incorporation* setting, where the goal is to update or integrate new information from a passage into weights.
+This is an implementation of SEAL for the *knowledge incorporation* setting, where the goal is to update or integrate new information from a passage into weights.  sbatch can always be replaced with bash if only using 1 GPU
 
 ## Usage
 
@@ -26,21 +26,31 @@ Use `make_squad_data.sh` (or `make_squad_data_openai.sh`) to create the syntheti
 sbatch knowledge-incorporation/scripts/make_squad_data.sh
 ```
 
-### 2. TTT server
-Run the `TTT_server`. This sets up a [ZMQ](https://zeromq.org/) port that takes input parameters like training data and corresponding questions, and then runs rounds of training a temporary lora adapter and evaluating on the questions. This is then called for both RL training rewards and evaluation.
+
+### 2. Train Reward Model
+
+To train a classification reward model on generated answers, run
+
+```bash
+sbatch knowledge-incorporation/scripts/train_reward_model.sh
+```
+
+
+### 3. TTT server
+Run the `TTT_server`. This sets up a [ZMQ](https://zeromq.org/) port that takes input parameters like training data and corresponding questions, and then runs rounds of training a temporary lora adapter and evaluating on the questions. This is then called for both RL training rewards and evaluation. Reward signal can be adjusted in the bash file. 
 
 ```bash
 sbatch knowledge-incorporation/scripts/TTT_server.sh
 ```
 
-### 3. Query server
+### 4. Query server
 To query the server, run either `query_server` or `CPT` for either the single-passage or multi-passage setting respectively. This can be set to run on training documents for a round of GRPO training, or on validation documents for evaluation. 
 
 ```bash
 sbatch knowledge-incorporation/scripts/query_server.sh
 ```
 
-### 4. RL Training
+### 5. RL Training
 To run GRPO, after running `query_server` on training documents, build the SFT dataset (more documentation in the python file):
 
 ```bash
