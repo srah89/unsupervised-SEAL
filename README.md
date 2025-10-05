@@ -9,5 +9,7 @@ SEAL (**Se**lf-**A**dapting **L**LMs) is a framework for training language model
 This project aims to make the training process of SEAL entirely unsupervised.
 This is done by making question generation and response grading perfomed by the model in-context, rather than using human generated questions and OpenAI grading.
 
+It also uses a GRPO approach to rewarding, with several different reward mechanisms, such as a reward model and a heuristic reward model appromixant.
+
 
 The original SEAL paper addressed two domains, [knowledge-incorporation](knowledge-incorporation) and few-shot learning; this project looks at only the former.
