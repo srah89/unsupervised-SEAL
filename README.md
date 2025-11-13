@@ -13,3 +13,5 @@ It also uses a GRPO approach to rewarding, with several different reward mechani
 
 
 The original SEAL paper addressed two domains, [knowledge-incorporation](knowledge-incorporation) and few-shot learning; this project looks at only the former.
+
+My paper on this repo: [Paper](https://drive.google.com/file/d/1xSF0Bch9CqdhuZ8QIwlOfU1kKxfN3RJH/view?usp=drive_link)
